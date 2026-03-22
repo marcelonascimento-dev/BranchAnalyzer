@@ -51,6 +51,35 @@ public partial class Form1
         btnBatchAnalyze.Click += BtnBatchAnalyze_Click;
         tblBatchTop.Controls.Add(btnBatchAnalyze, 2, 0);
 
+        // Cancel button (hidden by default, shown during analysis)
+        btnBatchCancel = new Button
+        {
+            Text = "CANCELAR",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(180, 50, 50),
+            ForeColor = Color.White,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 2),
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Visible = false
+        };
+        btnBatchCancel.FlatAppearance.BorderColor = Color.FromArgb(220, 60, 60);
+        btnBatchCancel.Click += BtnBatchCancel_Click;
+        tblBatchTop.Controls.Add(btnBatchCancel, 2, 0);
+
+        // ETA label (hidden by default)
+        lblBatchEta = new Label
+        {
+            Text = "",
+            ForeColor = Color.FromArgb(160, 160, 180),
+            Font = new Font("Segoe UI", 8f, FontStyle.Italic),
+            AutoSize = true,
+            Visible = false,
+            Location = new Point(10, 36)
+        };
+        pnlBatchTop.Controls.Add(lblBatchEta);
+
         pnlBatchTop.Controls.Add(tblBatchTop);
 
         btnBatchExport = new Button
@@ -442,6 +471,9 @@ public partial class Form1
             new DataGridViewTextBoxColumn { Name = "UltimoCommit", HeaderText = "Ultimo Commit", Width = 250, DataPropertyName = "UltimoCommit" }
         );
 
+        dgvBatchResults.CellDoubleClick += DgvBatchResults_CellDoubleClick;
+        dgvBatchResults.AutoGenerateColumns = false;
+
         // SplitContainer para dividir esquerda (lista) e direita (grid) corretamente
         splitBatch = new SplitContainer
         {
@@ -565,7 +597,7 @@ public partial class Form1
         ApplyBatchFilters();
     }
 
-    private void BtnBatchAnalyze_Click(object? sender, EventArgs e)
+    private async void BtnBatchAnalyze_Click(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(txtBatchReceptor.Text))
         {
@@ -590,112 +622,364 @@ public partial class Form1
             return;
         }
 
-        SetStatus($"Analisando {selected.Count} branches em lote...");
-        UseWaitCursor = true; Application.DoEvents();
-        btnBatchAnalyze.Enabled = false;
+        // Setup UI for analysis
+        _batchCts = new CancellationTokenSource();
+        var ct = _batchCts.Token;
+        btnBatchAnalyze.Visible = false;
+        btnBatchCancel.Visible = true;
+        lblBatchEta.Visible = true;
+        lblBatchEta.Text = "Estimando...";
+        pgBatch.Visible = true;
+        pgBatch.Minimum = 0;
+        pgBatch.Maximum = selected.Count;
+        pgBatch.Value = 0;
 
-        Invoke(() =>
+        _batchResults.Clear();
+        dgvBatchResults.DataSource = null;
+        dgvBatchResults.Rows.Clear();
+
+        SetStatus($"Analisando {selected.Count} branches em paralelo...");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int processed = 0;
+        const int maxConcurrency = 4;
+        var semaphore = new SemaphoreSlim(maxConcurrency);
+        var lockObj = new object();
+
+        try
         {
-            pgBatch.Visible = true;
-            pgBatch.Minimum = 0;
-            pgBatch.Maximum = selected.Count;
-            pgBatch.Value = 0;
-        });
-
-        Task.Run(() =>
-        {
-            var results = new List<BatchMergeResult>();
-            int processed = 0;
-
-            foreach (var branchName in selected)
+            var tasks = selected.Select(async branchName =>
             {
-                var resolved = _git.ResolveBranch(branchName);
-                if (resolved == null)
+                await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                try
                 {
-                    results.Add(new BatchMergeResult
+                    ct.ThrowIfCancellationRequested();
+                    var result = await AnalyzeSingleBranchAsync(receptor, branchName, ct).ConfigureAwait(false);
+
+                    var count = Interlocked.Increment(ref processed);
+
+                    Invoke(() =>
                     {
-                        BranchFeature = branchName,
-                        Status = "NAO ENCONTRADO"
+                        lock (lockObj)
+                            _batchResults.Add(result);
+
+                        pgBatch.Value = count;
+                        ColorBatchRow(result);
+
+                        // ETA calculation
+                        var elapsed = sw.Elapsed;
+                        var avgPerBranch = elapsed / count;
+                        var remaining = avgPerBranch * (selected.Count - count);
+                        lblBatchEta.Text = remaining.TotalSeconds < 2
+                            ? "Quase pronto..."
+                            : $"~{remaining:mm\\:ss} restante";
+
+                        SetStatus($"Analisando {count}/{selected.Count}: {branchName}");
                     });
                 }
-                else
+                finally
                 {
-                    try
-                    {
-                        var mergeStatus = _git.CheckMergeStatus(receptor, resolved);
-                        var conflicts = _git.DetectPotentialConflicts(receptor, resolved);
-                        var files = _git.GetChangedFiles(receptor, resolved);
-                        var branchInfo = _git.GetBranchInfo(receptor, resolved);
-
-                        results.Add(new BatchMergeResult
-                        {
-                            BranchFeature = branchName,
-                            Status = mergeStatus.IsMerged ? "MERGED" : "PENDENTE",
-                            CommitsPendentes = mergeStatus.PendingCommits,
-                            ConflitosArquivos = conflicts.Count,
-                            ArquivosAlterados = files.Count,
-                            UltimoAutor = branchInfo.LastCommitAuthor,
-                            UltimoCommit = branchInfo.LastCommitMessage.Length > 60
-                                ? branchInfo.LastCommitMessage[..60] + "..."
-                                : branchInfo.LastCommitMessage,
-                            IsMerged = mergeStatus.IsMerged
-                        });
-                    }
-                    catch
-                    {
-                        results.Add(new BatchMergeResult
-                        {
-                            BranchFeature = branchName,
-                            Status = "ERRO"
-                        });
-                    }
+                    semaphore.Release();
                 }
+            }).ToList();
 
-                processed++;
-                Invoke(() =>
-                {
-                    pgBatch.Value = processed;
-                    SetStatus($"Analisando {processed}/{selected.Count}: {branchName}");
-                });
-            }
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus($"Analise cancelada. {processed}/{selected.Count} branches processados.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Batch analysis error: {ex.Message}");
+            SetStatus($"Erro na analise em lote: {ex.Message}");
+        }
+        finally
+        {
+            sw.Stop();
 
-            Invoke(() =>
+            // Refresh grid with final sorted results
+            lock (lockObj)
             {
                 dgvBatchResults.DataSource = null;
-                dgvBatchResults.DataSource = results;
+                dgvBatchResults.DataSource = _batchResults.OrderBy(r => r.BranchFeature).ToList();
+            }
+            ColorAllBatchRows();
 
-                // Colorir linhas pelo status
-                foreach (DataGridViewRow row in dgvBatchResults.Rows)
+            var merged = _batchResults.Count(r => r.IsMerged);
+            var pending = _batchResults.Count(r => r.Status == "PENDENTE");
+            var withConflicts = _batchResults.Count(r => r.ConflitosArquivos > 0);
+
+            if (!ct.IsCancellationRequested)
+                SetStatus($"Lote concluido em {sw.Elapsed:mm\\:ss}: {_batchResults.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos");
+
+            pgBatch.Visible = false;
+            btnBatchCancel.Visible = false;
+            lblBatchEta.Visible = false;
+            btnBatchAnalyze.Visible = true;
+            _batchCts?.Dispose();
+            _batchCts = null;
+        }
+    }
+
+    private async Task<BatchMergeResult> AnalyzeSingleBranchAsync(string receptor, string branchName, CancellationToken ct)
+    {
+        var resolved = _git.ResolveBranch(branchName);
+        if (resolved == null)
+        {
+            return new BatchMergeResult
+            {
+                BranchFeature = branchName,
+                Status = "NAO ENCONTRADO"
+            };
+        }
+
+        try
+        {
+            var mergeStatusTask = _git.CheckMergeStatusAsync(receptor, resolved, ct);
+            var conflictsTask = _git.DetectPotentialConflictsAsync(receptor, resolved, ct);
+            var filesTask = _git.GetChangedFilesAsync(receptor, resolved, ct);
+            var branchInfoTask = _git.GetBranchInfoAsync(receptor, resolved, ct);
+
+            await Task.WhenAll(mergeStatusTask, conflictsTask, filesTask, branchInfoTask).ConfigureAwait(false);
+
+            var mergeStatus = mergeStatusTask.Result;
+            var conflicts = conflictsTask.Result;
+            var files = filesTask.Result;
+            var branchInfo = branchInfoTask.Result;
+
+            return new BatchMergeResult
+            {
+                BranchFeature = branchName,
+                Status = mergeStatus.IsMerged ? "MERGED" : "PENDENTE",
+                CommitsPendentes = mergeStatus.PendingCommits,
+                ConflitosArquivos = conflicts.Count,
+                ArquivosAlterados = files.Count,
+                UltimoAutor = branchInfo.LastCommitAuthor,
+                UltimoCommit = branchInfo.LastCommitMessage.Length > 60
+                    ? branchInfo.LastCommitMessage[..60] + "..."
+                    : branchInfo.LastCommitMessage,
+                IsMerged = mergeStatus.IsMerged
+            };
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Logger.Error($"Error analyzing branch {branchName}: {ex.Message}");
+            return new BatchMergeResult
+            {
+                BranchFeature = branchName,
+                Status = "ERRO"
+            };
+        }
+    }
+
+    private void BtnBatchCancel_Click(object? sender, EventArgs e)
+    {
+        _batchCts?.Cancel();
+        btnBatchCancel.Enabled = false;
+        btnBatchCancel.Text = "Cancelando...";
+        SetStatus("Cancelando analise...");
+    }
+
+    private void ColorBatchRow(BatchMergeResult r)
+    {
+        // Add row directly to the grid
+        var rowIndex = dgvBatchResults.Rows.Add(
+            r.BranchFeature, r.Status, r.CommitsPendentes,
+            r.ConflitosArquivos, r.ArquivosAlterados,
+            r.UltimoAutor, r.UltimoCommit);
+
+        var row = dgvBatchResults.Rows[rowIndex];
+        row.Tag = r;
+        ApplyRowColor(row, r);
+    }
+
+    private void ColorAllBatchRows()
+    {
+        foreach (DataGridViewRow row in dgvBatchResults.Rows)
+        {
+            if (row.DataBoundItem is BatchMergeResult r)
+                ApplyRowColor(row, r);
+        }
+    }
+
+    private static void ApplyRowColor(DataGridViewRow row, BatchMergeResult r)
+    {
+        row.DefaultCellStyle.ForeColor = r.Status switch
+        {
+            "MERGED" => Color.FromArgb(80, 220, 80),
+            "PENDENTE" => r.ConflitosArquivos > 0
+                ? Color.FromArgb(255, 100, 80)
+                : Color.FromArgb(255, 200, 80),
+            _ => Color.FromArgb(180, 80, 80)
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DRILL-DOWN: Duplo-clique em resultado do lote
+    // ══════════════════════════════════════════════════════════════════
+
+    private void DgvBatchResults_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0) return;
+
+        var row = dgvBatchResults.Rows[e.RowIndex];
+        var result = row.DataBoundItem as BatchMergeResult ?? row.Tag as BatchMergeResult;
+        if (result == null || result.Status == "NAO ENCONTRADO" || result.Status == "ERRO") return;
+
+        var receptor = txtBatchReceptor.Text;
+
+        // Open drill-down dialog
+        using var dlg = new Form
+        {
+            Text = $"Detalhes: {result.BranchFeature} → {receptor}",
+            Size = new Size(900, 600),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Color.FromArgb(24, 24, 32),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5f),
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Icon = Icon
+        };
+
+        var tabs = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 9.5f),
+            Padding = new Point(8, 4)
+        };
+
+        // Tab 1: Resumo
+        var tabSummary = new TabPage("Resumo") { BackColor = Color.FromArgb(28, 28, 38) };
+        var rtbSummary = new RichTextBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(28, 28, 38),
+            ForeColor = Color.FromArgb(220, 220, 230),
+            Font = new Font("Consolas", 10f),
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            WordWrap = true
+        };
+
+        var summaryText = $@"BRANCH FEATURE:    {result.BranchFeature}
+BRANCH RECEPTOR:   {receptor}
+STATUS:            {result.Status}
+
+COMMITS PENDENTES: {result.CommitsPendentes}
+CONFLITOS POT.:    {result.ConflitosArquivos}
+ARQUIVOS ALTERADOS:{result.ArquivosAlterados}
+
+ULTIMO AUTOR:      {result.UltimoAutor}
+ULTIMO COMMIT:     {result.UltimoCommit}
+";
+        rtbSummary.Text = summaryText;
+        tabSummary.Controls.Add(rtbSummary);
+        tabs.TabPages.Add(tabSummary);
+
+        // Tab 2: Commits pendentes
+        var tabCommits = new TabPage("Commits Pendentes") { BackColor = Color.FromArgb(28, 28, 38) };
+        var dgvCommits = CreateDataGrid();
+        dgvCommits.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "Hash", HeaderText = "Hash", Width = 80 },
+            new DataGridViewTextBoxColumn { Name = "Autor", HeaderText = "Autor", Width = 180 },
+            new DataGridViewTextBoxColumn { Name = "Data", HeaderText = "Quando", Width = 120 },
+            new DataGridViewTextBoxColumn { Name = "Mensagem", HeaderText = "Mensagem", Width = 450 }
+        );
+        tabCommits.Controls.Add(dgvCommits);
+        tabs.TabPages.Add(tabCommits);
+
+        // Tab 3: Arquivos alterados
+        var tabFiles = new TabPage("Arquivos Alterados") { BackColor = Color.FromArgb(28, 28, 38) };
+        var dgvFiles = CreateDataGrid();
+        dgvFiles.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 100 },
+            new DataGridViewTextBoxColumn { Name = "Arquivo", HeaderText = "Arquivo", Width = 700 }
+        );
+        tabFiles.Controls.Add(dgvFiles);
+        tabs.TabPages.Add(tabFiles);
+
+        // Tab 4: Conflitos
+        var tabConflicts = new TabPage("Conflitos Potenciais") { BackColor = Color.FromArgb(28, 28, 38) };
+        var lstConflicts = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(28, 28, 38),
+            ForeColor = Color.FromArgb(255, 100, 80),
+            Font = new Font("Consolas", 10f),
+            BorderStyle = BorderStyle.None
+        };
+        tabConflicts.Controls.Add(lstConflicts);
+        tabs.TabPages.Add(tabConflicts);
+
+        dlg.Controls.Add(tabs);
+
+        // Loading label
+        var lblLoading = new Label
+        {
+            Text = "Carregando detalhes...",
+            ForeColor = Color.FromArgb(120, 180, 255),
+            Dock = DockStyle.Bottom,
+            Height = 30,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 9f, FontStyle.Italic)
+        };
+        dlg.Controls.Add(lblLoading);
+
+        // Load data async after dialog is shown
+        dlg.Shown += async (_, _) =>
+        {
+            try
+            {
+                var resolvedReceptor = _git.ResolveBranch(receptor)!;
+                var resolvedFeature = _git.ResolveBranch(result.BranchFeature)!;
+
+                var commitsTask = _git.GetPendingCommitsAsync(resolvedReceptor, resolvedFeature);
+                var filesTask = _git.GetChangedFilesAsync(resolvedReceptor, resolvedFeature);
+                var conflictsTask = _git.DetectPotentialConflictsAsync(resolvedReceptor, resolvedFeature);
+
+                await Task.WhenAll(commitsTask, filesTask, conflictsTask);
+
+                var commits = commitsTask.Result;
+                var files = filesTask.Result;
+                var conflicts = conflictsTask.Result;
+
+                foreach (var c in commits)
+                    dgvCommits.Rows.Add(c.Hash[..Math.Min(8, c.Hash.Length)], c.Author, c.RelativeDate, c.Message);
+
+                foreach (var f in files)
                 {
-                    if (row.DataBoundItem is BatchMergeResult r)
+                    var rowIdx = dgvFiles.Rows.Add(f.Status, f.FilePath);
+                    dgvFiles.Rows[rowIdx].DefaultCellStyle.ForeColor = f.StatusCode switch
                     {
-                        if (r.Status == "MERGED")
-                        {
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 220, 80);
-                        }
-                        else if (r.Status == "PENDENTE")
-                        {
-                            row.DefaultCellStyle.ForeColor = r.ConflitosArquivos > 0
-                                ? Color.FromArgb(255, 100, 80)
-                                : Color.FromArgb(255, 200, 80);
-                        }
-                        else
-                        {
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(180, 80, 80);
-                        }
-                    }
+                        'A' => Color.FromArgb(80, 220, 80),
+                        'D' => Color.FromArgb(255, 80, 80),
+                        _ => Color.FromArgb(255, 200, 80)
+                    };
                 }
 
-                var merged = results.Count(r => r.IsMerged);
-                var pending = results.Count(r => r.Status == "PENDENTE");
-                var withConflicts = results.Count(r => r.ConflitosArquivos > 0);
+                if (conflicts.Count == 0)
+                    lstConflicts.Items.Add("Nenhum conflito potencial detectado.");
+                else
+                    foreach (var c in conflicts)
+                        lstConflicts.Items.Add(c);
 
-                SetStatus($"Lote concluido: {results.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos potenciais");
-                pgBatch.Visible = false;
-                btnBatchAnalyze.Enabled = true;
-                RestoreDefaultCursor();
-            });
-        });
+                tabCommits.Text = $"Commits Pendentes ({commits.Count})";
+                tabFiles.Text = $"Arquivos Alterados ({files.Count})";
+                tabConflicts.Text = $"Conflitos Potenciais ({conflicts.Count})";
+
+                lblLoading.Visible = false;
+            }
+            catch (Exception ex)
+            {
+                lblLoading.Text = $"Erro ao carregar: {ex.Message}";
+                lblLoading.ForeColor = Color.FromArgb(255, 80, 80);
+            }
+        };
+
+        dlg.ShowDialog(this);
     }
 
     private void BtnBatchExport_Click(object? sender, EventArgs e)

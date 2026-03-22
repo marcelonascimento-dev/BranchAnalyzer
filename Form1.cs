@@ -63,6 +63,12 @@ public partial class Form1 : Form
     private SplitContainer splitBatch = null!;
     private List<BranchMetadata> _allBranchesMetadata = new();
 
+    // Batch parallel analysis
+    private CancellationTokenSource? _batchCts;
+    private Button btnBatchCancel = null!;
+    private Label lblBatchEta = null!;
+    private readonly List<BatchMergeResult> _batchResults = new();
+
     // Branch lists
     private List<string> _allBranches = new();
     private List<string> _localBranches = new();
