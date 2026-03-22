@@ -13,9 +13,13 @@ public partial class Form1 : Form
     private Button btnSetRepo = null!;
     private Button btnFetch = null!;
     private Button btnSwap = null!;
+    private Button btnAnalyze = null!;
     private Label lblRepo = null!;
     private Label lblStatus = null!;
     private Label lblCurrentBranch = null!;
+    private Label lblA = null!;
+    private Label lblB = null!;
+    private Panel pnlTop = null!;
     private Panel pnlStatus = null!;
     private TabControl tabs = null!;
 
@@ -45,6 +49,8 @@ public partial class Form1 : Form
     private Button btnBatchSelectAll = null!;
     private Button btnBatchDeselectAll = null!;
     private Button btnBatchExport = null!;
+    private Button btnBatchExportCsv = null!;
+    private Button btnBatchExportJson = null!;
     private TextBox txtBatchFilter = null!;
     private Label lblBatchCount = null!;
     private ProgressBar pgBatch = null!;
@@ -63,6 +69,15 @@ public partial class Form1 : Form
         SetupUI();
         RestoreWindowState();
         FormClosing += (_, _) => SaveSettings();
+        Shown += (_, _) =>
+        {
+            // Forçar SplitterDistance após o form estar visível
+            // WinForms reseta splitters em tabs ocultas durante a criação
+            BeginInvoke(() =>
+            {
+                try { splitBatch.SplitterDistance = 350; } catch { }
+            });
+        };
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -73,70 +88,64 @@ public partial class Form1 : Form
     {
         Text = "Branch Analyzer";
         Size = new Size(1280, 850);
-        MinimumSize = new Size(1000, 700);
+        MinimumSize = new Size(1100, 700);
+        MaximumSize = new Size(1400, 950);
+        MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(24, 24, 32);
         Font = new Font("Segoe UI", 9.5f);
         Icon = CreateAppIcon();
 
         // ── Painel superior ────────────────────────────────────────
-        var pnlTop = new Panel
+        pnlTop = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 140,
+            Height = 110,
             BackColor = Color.FromArgb(30, 30, 42),
-            Padding = new Padding(16, 10, 16, 10)
+            Padding = new Padding(12, 6, 12, 6)
         };
+        pnlTop.Resize += (_, _) => LayoutTopPanel();
         Controls.Add(pnlTop);
 
-        // Titulo
+        // ── Linha 1: Titulo + info repo ──
         var lblTitle = new Label
         {
             Text = "BRANCH ANALYZER",
-            Font = new Font("Segoe UI", 16, FontStyle.Bold),
+            Font = new Font("Segoe UI", 13, FontStyle.Bold),
             ForeColor = Color.FromArgb(120, 180, 255),
             AutoSize = true,
-            Location = new Point(16, 8)
+            Location = new Point(4, 2)
         };
         pnlTop.Controls.Add(lblTitle);
 
-        var lblSubtitle = new Label
-        {
-            Text = "Ferramenta de analise de branches  |  Somente leitura",
-            Font = new Font("Segoe UI", 8.5f),
-            ForeColor = Color.FromArgb(140, 140, 160),
-            AutoSize = true,
-            Location = new Point(18, 38)
-        };
-        pnlTop.Controls.Add(lblSubtitle);
-
-        // Repositorio
         var lblRepoLabel = new Label
         {
-            Text = "Repositorio:",
-            ForeColor = Color.FromArgb(180, 180, 200),
+            Text = "Repo:",
+            ForeColor = Color.FromArgb(140, 140, 160),
             AutoSize = true,
-            Location = new Point(16, 62)
+            Font = new Font("Segoe UI", 8f),
+            Location = new Point(210, 2)
         };
         pnlTop.Controls.Add(lblRepoLabel);
 
         lblRepo = new Label
         {
-            Text = "(nenhum selecionado)",
+            Text = "(nenhum)",
             ForeColor = Color.FromArgb(255, 200, 80),
             AutoSize = true,
-            Font = new Font("Consolas", 9),
-            Location = new Point(110, 62)
+            Font = new Font("Consolas", 8.5f),
+            Location = new Point(248, 2),
+            MaximumSize = new Size(600, 0)
         };
         pnlTop.Controls.Add(lblRepo);
 
-        // Branch atual
         var lblCurrentLabel = new Label
         {
-            Text = "Branch atual:",
-            ForeColor = Color.FromArgb(180, 180, 200),
+            Text = "Branch:",
+            ForeColor = Color.FromArgb(140, 140, 160),
             AutoSize = true,
-            Location = new Point(16, 82)
+            Font = new Font("Segoe UI", 8f),
+            Location = new Point(210, 18)
         };
         pnlTop.Controls.Add(lblCurrentLabel);
 
@@ -145,88 +154,88 @@ public partial class Form1 : Form
             Text = "",
             ForeColor = Color.FromArgb(80, 220, 120),
             AutoSize = true,
-            Font = new Font("Consolas", 9.5f, FontStyle.Bold),
-            Location = new Point(110, 82)
+            Font = new Font("Consolas", 8.5f, FontStyle.Bold),
+            Location = new Point(258, 18)
         };
         pnlTop.Controls.Add(lblCurrentBranch);
 
+        // Botoes no canto superior direito
         btnSetRepo = new Button
         {
             Text = "Selecionar Repo",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(50, 50, 70),
             ForeColor = Color.White,
-            Size = new Size(130, 28),
-            Location = new Point(16, 95),
-            Cursor = Cursors.Hand
+            Size = new Size(120, 26),
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 8f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnSetRepo.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 100);
         btnSetRepo.Click += BtnSetRepo_Click;
         pnlTop.Controls.Add(btnSetRepo);
 
-        // Botão Fetch Origin (estilo Visual Studio)
         btnFetch = new Button
         {
-            Text = "↓ Fetch Origin",
+            Text = "\u2193 Fetch",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(50, 50, 70),
             ForeColor = Color.White,
-            Size = new Size(120, 28),
-            Location = new Point(155, 95),
+            Size = new Size(80, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 9f)
+            Font = new Font("Segoe UI", 8f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnFetch.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 100);
         btnFetch.Click += BtnFetch_Click;
         pnlTop.Controls.Add(btnFetch);
 
-        // Botão dropdown Fetch Completo (com prune)
         var btnFetchFull = new Button
         {
-            Text = "▼",
+            Text = "\u25BC",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(50, 50, 70),
             ForeColor = Color.FromArgb(160, 160, 180),
-            Size = new Size(24, 28),
-            Location = new Point(275, 95),
+            Size = new Size(22, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 7f)
+            Font = new Font("Segoe UI", 7f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnFetchFull.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 100);
         var fetchMenu = new ContextMenuStrip();
         fetchMenu.BackColor = Color.FromArgb(30, 30, 45);
         fetchMenu.ForeColor = Color.White;
         fetchMenu.Renderer = new DarkMenuRenderer();
-        fetchMenu.Items.Add("↓  Fetch Origin (rapido)", null, (_, _) => BtnFetch_Click(null, EventArgs.Empty));
-        fetchMenu.Items.Add("↓  Fetch + Prune (completo)", null, (_, _) => BtnFetchFull_Click());
+        fetchMenu.Items.Add("\u2193  Fetch Origin (rapido)", null, (_, _) => BtnFetch_Click(null, EventArgs.Empty));
+        fetchMenu.Items.Add("\u2193  Fetch + Prune (completo)", null, (_, _) => BtnFetchFull_Click());
         btnFetchFull.Click += (_, _) => fetchMenu.Show(btnFetchFull, new Point(0, btnFetchFull.Height));
         pnlTop.Controls.Add(btnFetchFull);
 
-        // Branch A
-        var lblA = new Label
+        // ── Linha 2: Branch selectors (A) <> (B) [ANALISAR] ──
+        // Posicionados com LayoutTopPanel() para serem responsivos
+        lblA = new Label
         {
-            Text = "Branch Receptor (A):",
+            Text = "Receptor (A):",
             ForeColor = Color.FromArgb(100, 220, 100),
             AutoSize = true,
-            Location = new Point(340, 62)
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Location = new Point(4, 40)
         };
         pnlTop.Controls.Add(lblA);
 
-        txtBranchA = CreateBranchComboBox(new Point(340, 82));
+        txtBranchA = CreateBranchComboBox(new Point(4, 58));
         SetupBranchAutocomplete(txtBranchA);
         pnlTop.Controls.Add(txtBranchA);
 
-        // Swap
         btnSwap = new Button
         {
-            Text = "<>",
+            Text = "\u21C4",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(50, 50, 70),
             ForeColor = Color.FromArgb(200, 200, 255),
-            Size = new Size(35, 28),
-            Location = new Point(628, 82),
+            Size = new Size(36, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 11, FontStyle.Bold)
         };
         btnSwap.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 100);
         btnSwap.Click += (_, _) =>
@@ -235,35 +244,36 @@ public partial class Form1 : Form
         };
         pnlTop.Controls.Add(btnSwap);
 
-        // Branch B
-        var lblB = new Label
+        lblB = new Label
         {
-            Text = "Branch Feature (B):",
+            Text = "Feature (B):",
             ForeColor = Color.FromArgb(255, 180, 80),
             AutoSize = true,
-            Location = new Point(672, 62)
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
         };
         pnlTop.Controls.Add(lblB);
 
-        txtBranchB = CreateBranchComboBox(new Point(672, 82));
+        txtBranchB = CreateBranchComboBox(Point.Empty);
         SetupBranchAutocomplete(txtBranchB);
         pnlTop.Controls.Add(txtBranchB);
 
-        // Botao analisar
-        var btnAnalyze = new Button
+        btnAnalyze = new Button
         {
             Text = "ANALISAR",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 100, 200),
             ForeColor = Color.White,
-            Size = new Size(120, 28),
-            Location = new Point(962, 82),
+            Size = new Size(110, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnAnalyze.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 220);
         btnAnalyze.Click += BtnAnalyze_Click;
         pnlTop.Controls.Add(btnAnalyze);
+
+        // Posicionar inicialmente
+        LayoutTopPanel();
 
         // ── Status bar inferior ────────────────────────────────────
         pnlStatus = new Panel
@@ -298,13 +308,7 @@ public partial class Form1 : Form
         // Auto-detectar repo atual
         TryAutoDetectRepo();
 
-        // Restaurar branches salvos
-        if (!string.IsNullOrEmpty(_settings.LastBranchA))
-            txtBranchA.Text = _settings.LastBranchA;
-        if (!string.IsNullOrEmpty(_settings.LastBranchB))
-            txtBranchB.Text = _settings.LastBranchB;
-        if (!string.IsNullOrEmpty(_settings.LastBatchReceptor))
-            txtBatchReceptor.Text = _settings.LastBatchReceptor;
+        // Branches começam vazios ao abrir o app
     }
 
     private static ComboBox CreateBranchComboBox(Point location)
@@ -557,7 +561,8 @@ public partial class Form1 : Form
             Size = new Size(100, 24),
             Location = new Point(300, 4),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8f)
+            Font = new Font("Segoe UI", 8f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnExportCsv.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 80);
         btnExportCsv.Click += (_, _) => ExportGrid(dgvMergeCommits, "csv");
@@ -572,7 +577,8 @@ public partial class Form1 : Form
             Size = new Size(105, 24),
             Location = new Point(405, 4),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8f)
+            Font = new Font("Segoe UI", 8f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnExportJson.FlatAppearance.BorderColor = Color.FromArgb(60, 90, 150);
         btnExportJson.Click += (_, _) => ExportGrid(dgvMergeCommits, "json");
@@ -594,21 +600,23 @@ public partial class Form1 : Form
 
         // ── Tab: Meu Branch (informacoes do branch atual) ──────────
         tabMyBranch = CreateTab("Meu Branch");
+
+        // Barra superior com botão Atualizar
         var pnlMyBranchTop = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 40,
+            Height = 36,
             BackColor = Color.FromArgb(30, 30, 42),
-            Padding = new Padding(8)
+            Padding = new Padding(8, 5, 8, 5)
         };
         var btnRefreshMyBranch = new Button
         {
-            Text = "Atualizar",
+            Text = "\u21BB  Atualizar",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 100, 200),
             ForeColor = Color.White,
             Size = new Size(110, 26),
-            Location = new Point(10, 7),
+            Location = new Point(8, 5),
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 9f, FontStyle.Bold)
         };
@@ -616,76 +624,118 @@ public partial class Form1 : Form
         btnRefreshMyBranch.Click += (_, _) => LoadMyBranchInfo();
         pnlMyBranchTop.Controls.Add(btnRefreshMyBranch);
 
+        // Resumo do branch (RichTextBox compacto na esquerda)
         _rtbMyBranch = CreateRichTextBox();
 
-        // Grid com commits recentes do branch atual
+        // Grid: commits recentes
         _dgvMyCommits = CreateDataGrid();
         _dgvMyCommits.Columns.AddRange(
-            new DataGridViewTextBoxColumn { Name = "Hash", HeaderText = "Hash", Width = 90, DataPropertyName = "Hash" },
-            new DataGridViewTextBoxColumn { Name = "Author", HeaderText = "Autor", Width = 180, DataPropertyName = "Author" },
-            new DataGridViewTextBoxColumn { Name = "RelativeDate", HeaderText = "Quando", Width = 120, DataPropertyName = "RelativeDate" },
-            new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Mensagem", Width = 550, DataPropertyName = "Message" }
+            new DataGridViewTextBoxColumn { Name = "Hash", HeaderText = "Hash", Width = 85, DataPropertyName = "Hash" },
+            new DataGridViewTextBoxColumn { Name = "Author", HeaderText = "Autor", Width = 170, DataPropertyName = "Author" },
+            new DataGridViewTextBoxColumn { Name = "RelativeDate", HeaderText = "Quando", Width = 110, DataPropertyName = "RelativeDate" },
+            new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Mensagem", Width = 500, DataPropertyName = "Message" }
         );
 
-        // Grid com arquivos modificados localmente
+        // Grid: arquivos modificados localmente
         _dgvLocalChanges = CreateDataGrid();
         _dgvLocalChanges.Columns.AddRange(
-            new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 150, DataPropertyName = "Status" },
-            new DataGridViewTextBoxColumn { Name = "FilePath", HeaderText = "Arquivo", Width = 700, DataPropertyName = "FilePath" }
+            new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 100, DataPropertyName = "Status" },
+            new DataGridViewTextBoxColumn { Name = "FilePath", HeaderText = "Arquivo", Width = 500, DataPropertyName = "FilePath" }
         );
 
-        // SplitContainer: info+local changes em cima, commits embaixo
+        // ── Layout: 3 seções verticais ──
+        // Topo: Info resumo (RichTextBox)
+        // Meio: Alterações locais (grid)
+        // Baixo: Commits recentes (grid)
+
+        // SplitContainer principal: [info + local changes] | [commits]
         var splitMyBranch = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
-            SplitterDistance = 250,
-            SplitterWidth = 4,
-            BackColor = Color.FromArgb(50, 50, 70)
+            SplitterDistance = 320,
+            SplitterWidth = 3,
+            BackColor = Color.FromArgb(40, 40, 55),
+            Panel1MinSize = 150,
+            Panel2MinSize = 150
         };
 
-        // Painel superior: info resumo + alteracoes locais
-        var splitTop = new SplitContainer
+        // Panel1: Info + Local Changes (split vertical)
+        var splitInfoAndChanges = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 400,
-            SplitterWidth = 4,
-            BackColor = Color.FromArgb(50, 50, 70)
+            Orientation = Orientation.Horizontal,
+            SplitterDistance = 180,
+            SplitterWidth = 3,
+            BackColor = Color.FromArgb(40, 40, 55),
+            Panel1MinSize = 100,
+            Panel2MinSize = 80
         };
-        splitTop.Panel1.Controls.Add(_rtbMyBranch);
-        splitTop.Panel1.BackColor = Color.FromArgb(24, 24, 32);
 
-        var lblLocalChanges = new Label
+        // Seção: Resumo do branch
+        var pnlInfoSection = new Panel
         {
-            Text = "Alteracoes locais (nao commitadas):",
-            ForeColor = Color.FromArgb(255, 180, 60),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-            Dock = DockStyle.Top,
-            Height = 25,
-            Padding = new Padding(5, 4, 0, 0),
-            BackColor = Color.FromArgb(28, 28, 38)
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(24, 24, 32)
         };
-        splitTop.Panel2.Controls.Add(_dgvLocalChanges);
-        splitTop.Panel2.Controls.Add(lblLocalChanges);
-        splitTop.Panel2.BackColor = Color.FromArgb(24, 24, 32);
-
-        splitMyBranch.Panel1.Controls.Add(splitTop);
-        splitMyBranch.Panel1.BackColor = Color.FromArgb(24, 24, 32);
-
-        // Painel inferior: commits recentes
-        var lblRecentCommits = new Label
+        var lblInfoTitle = new Label
         {
-            Text = "Ultimos commits no branch atual:",
+            Text = "\u2139  Informações do Branch",
             ForeColor = Color.FromArgb(120, 180, 255),
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             Dock = DockStyle.Top,
-            Height = 25,
-            Padding = new Padding(5, 4, 0, 0),
-            BackColor = Color.FromArgb(28, 28, 38)
+            Height = 26,
+            Padding = new Padding(8, 5, 0, 0),
+            BackColor = Color.FromArgb(28, 28, 42)
         };
-        splitMyBranch.Panel2.Controls.Add(_dgvMyCommits);
-        splitMyBranch.Panel2.Controls.Add(lblRecentCommits);
+        pnlInfoSection.Controls.Add(_rtbMyBranch);
+        pnlInfoSection.Controls.Add(lblInfoTitle);
+        splitInfoAndChanges.Panel1.Controls.Add(pnlInfoSection);
+        splitInfoAndChanges.Panel1.BackColor = Color.FromArgb(24, 24, 32);
+
+        // Seção: Alterações locais
+        var pnlLocalSection = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(24, 24, 32)
+        };
+        var lblLocalChanges = new Label
+        {
+            Text = "\u270E  Alterações locais (não commitadas)",
+            ForeColor = Color.FromArgb(255, 180, 60),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Dock = DockStyle.Top,
+            Height = 26,
+            Padding = new Padding(8, 5, 0, 0),
+            BackColor = Color.FromArgb(28, 28, 42)
+        };
+        pnlLocalSection.Controls.Add(_dgvLocalChanges);
+        pnlLocalSection.Controls.Add(lblLocalChanges);
+        splitInfoAndChanges.Panel2.Controls.Add(pnlLocalSection);
+        splitInfoAndChanges.Panel2.BackColor = Color.FromArgb(24, 24, 32);
+
+        splitMyBranch.Panel1.Controls.Add(splitInfoAndChanges);
+        splitMyBranch.Panel1.BackColor = Color.FromArgb(24, 24, 32);
+
+        // Seção: Commits recentes
+        var pnlCommitsSection = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(24, 24, 32)
+        };
+        var lblRecentCommits = new Label
+        {
+            Text = "\u23F0  Últimos commits no branch atual",
+            ForeColor = Color.FromArgb(120, 180, 255),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Dock = DockStyle.Top,
+            Height = 26,
+            Padding = new Padding(8, 5, 0, 0),
+            BackColor = Color.FromArgb(28, 28, 42)
+        };
+        pnlCommitsSection.Controls.Add(_dgvMyCommits);
+        pnlCommitsSection.Controls.Add(lblRecentCommits);
+        splitMyBranch.Panel2.Controls.Add(pnlCommitsSection);
         splitMyBranch.Panel2.BackColor = Color.FromArgb(24, 24, 32);
 
         tabMyBranch.Controls.Add(splitMyBranch);
@@ -694,21 +744,35 @@ public partial class Form1 : Form
 
         // ── Tab: Verificacao em Lote ───────────────────────────────
         tabBatch = CreateTab("Lote (Multi-Branch)");
-        var pnlBatchTop = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = Color.FromArgb(30, 30, 42), Padding = new Padding(8) };
+        var pnlBatchTop = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = Color.FromArgb(30, 30, 42), Padding = new Padding(8, 8, 8, 8) };
+
+        var tblBatchTop = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));  // Label
+        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));   // ComboBox
+        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));  // Botão
 
         var lblBatchReceptor = new Label
         {
             Text = "Receptor (A):",
             ForeColor = Color.FromArgb(100, 220, 100),
-            AutoSize = true,
-            Location = new Point(10, 16),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
         };
-        pnlBatchTop.Controls.Add(lblBatchReceptor);
+        tblBatchTop.Controls.Add(lblBatchReceptor, 0, 0);
 
-        txtBatchReceptor = CreateBranchComboBox(new Point(120, 12));
+        txtBatchReceptor = CreateBranchComboBox(Point.Empty);
+        txtBatchReceptor.Dock = DockStyle.Fill;
+        txtBatchReceptor.Margin = new Padding(0, 3, 8, 3);
         SetupBranchAutocomplete(txtBatchReceptor);
-        pnlBatchTop.Controls.Add(txtBatchReceptor);
+        tblBatchTop.Controls.Add(txtBatchReceptor, 1, 0);
 
         btnBatchAnalyze = new Button
         {
@@ -716,14 +780,16 @@ public partial class Form1 : Form
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 100, 200),
             ForeColor = Color.White,
-            Size = new Size(200, 28),
-            Location = new Point(420, 12),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 2),
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
         };
         btnBatchAnalyze.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 220);
         btnBatchAnalyze.Click += BtnBatchAnalyze_Click;
-        pnlBatchTop.Controls.Add(btnBatchAnalyze);
+        tblBatchTop.Controls.Add(btnBatchAnalyze, 2, 0);
+
+        pnlBatchTop.Controls.Add(tblBatchTop);
 
         btnBatchExport = new Button
         {
@@ -733,13 +799,14 @@ public partial class Form1 : Form
             ForeColor = Color.White,
             Size = new Size(110, 28),
             Location = new Point(630, 12),
-            Cursor = Cursors.Hand
+            Cursor = Cursors.Hand,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnBatchExport.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 100);
         btnBatchExport.Click += BtnBatchExport_Click;
         pnlBatchTop.Controls.Add(btnBatchExport);
 
-        var btnBatchExportCsv = new Button
+        btnBatchExportCsv = new Button
         {
             Text = "CSV",
             FlatStyle = FlatStyle.Flat,
@@ -748,13 +815,14 @@ public partial class Form1 : Form
             Size = new Size(55, 28),
             Location = new Point(745, 12),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8.5f)
+            Font = new Font("Segoe UI", 8.5f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnBatchExportCsv.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 80);
         btnBatchExportCsv.Click += (_, _) => ExportGrid(dgvBatchResults, "csv");
         pnlBatchTop.Controls.Add(btnBatchExportCsv);
 
-        var btnBatchExportJson = new Button
+        btnBatchExportJson = new Button
         {
             Text = "JSON",
             FlatStyle = FlatStyle.Flat,
@@ -763,7 +831,8 @@ public partial class Form1 : Form
             Size = new Size(60, 28),
             Location = new Point(805, 12),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8.5f)
+            Font = new Font("Segoe UI", 8.5f),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         btnBatchExportJson.FlatAppearance.BorderColor = Color.FromArgb(60, 90, 150);
         btnBatchExportJson.Click += (_, _) => ExportGrid(dgvBatchResults, "json");
@@ -774,7 +843,8 @@ public partial class Form1 : Form
             Location = new Point(875, 16),
             Size = new Size(180, 20),
             Visible = false,
-            Style = ProgressBarStyle.Continuous
+            Style = ProgressBarStyle.Continuous,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         pnlBatchTop.Controls.Add(pgBatch);
 
@@ -793,9 +863,9 @@ public partial class Form1 : Form
         var pnlFilters = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 230,
+            Height = 220,
             BackColor = Color.FromArgb(32, 32, 45),
-            Padding = new Padding(6)
+            Padding = new Padding(8, 6, 8, 4)
         };
 
         var lblFiltersTitle = new Label
@@ -803,75 +873,110 @@ public partial class Form1 : Form
             Text = "FILTROS",
             ForeColor = Color.FromArgb(100, 180, 255),
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-            Location = new Point(6, 4),
-            AutoSize = true
+            Dock = DockStyle.Top,
+            Height = 22
         };
-        pnlFilters.Controls.Add(lblFiltersTitle);
 
-        // Filtro por nome
+        // TableLayoutPanel para organizar filtros de forma responsiva
+        var tblFilters = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 6,
+            AutoSize = false,
+            Padding = Padding.Empty,
+            Margin = Padding.Empty
+        };
+        tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+        tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Nome label + field
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Nome field
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Autor label + field
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Autor field
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); // Tipo + Periodo
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Botoes
+
+        // Row 0: Label Nome
         var lblFilterName = new Label
         {
             Text = "Nome:",
             ForeColor = Color.FromArgb(180, 180, 190),
             Font = new Font("Segoe UI", 8.5f),
-            Location = new Point(6, 28),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft
         };
-        pnlFilters.Controls.Add(lblFilterName);
+        tblFilters.Controls.Add(lblFilterName, 0, 0);
+        tblFilters.SetColumnSpan(lblFilterName, 2);
 
+        // Row 1: TextBox Nome
         txtBatchFilter = new TextBox
         {
-            Location = new Point(6, 46),
-            Size = new Size(306, 26),
+            Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(40, 40, 55),
             ForeColor = Color.White,
             Font = new Font("Consolas", 9.5f),
-            PlaceholderText = "Buscar por nome..."
+            PlaceholderText = "Buscar por nome...",
+            Margin = new Padding(0, 2, 0, 2)
         };
         txtBatchFilter.TextChanged += (_, _) => ApplyBatchFilters();
-        pnlFilters.Controls.Add(txtBatchFilter);
+        tblFilters.Controls.Add(txtBatchFilter, 0, 1);
+        tblFilters.SetColumnSpan(txtBatchFilter, 2);
 
-        // Filtro por autor
+        // Row 2: Label Autor
         var lblFilterAuthor = new Label
         {
             Text = "Autor:",
             ForeColor = Color.FromArgb(180, 180, 190),
             Font = new Font("Segoe UI", 8.5f),
-            Location = new Point(6, 76),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft
         };
-        pnlFilters.Controls.Add(lblFilterAuthor);
+        tblFilters.Controls.Add(lblFilterAuthor, 0, 2);
+        tblFilters.SetColumnSpan(lblFilterAuthor, 2);
 
+        // Row 3: ComboBox Autor
         cmbBatchFilterAuthor = new ComboBox
         {
-            Location = new Point(6, 94),
-            Size = new Size(306, 26),
+            Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(40, 40, 55),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Font = new Font("Consolas", 9f),
-            DropDownStyle = ComboBoxStyle.DropDownList
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 2, 0, 2)
         };
         cmbBatchFilterAuthor.Items.Add("(Todos os autores)");
         cmbBatchFilterAuthor.SelectedIndex = 0;
         cmbBatchFilterAuthor.SelectedIndexChanged += (_, _) => ApplyBatchFilters();
-        pnlFilters.Controls.Add(cmbBatchFilterAuthor);
+        tblFilters.Controls.Add(cmbBatchFilterAuthor, 0, 3);
+        tblFilters.SetColumnSpan(cmbBatchFilterAuthor, 2);
 
-        // Filtro por tipo de branch (prefixo)
+        // Row 4: Tipo + Periodo (sub-table)
+        var tblTipoPeriodo = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4,
+            RowCount = 1,
+            Margin = new Padding(0, 2, 0, 2)
+        };
+        tblTipoPeriodo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+        tblTipoPeriodo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        tblTipoPeriodo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 55));
+        tblTipoPeriodo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+
         var lblFilterPrefix = new Label
         {
             Text = "Tipo:",
             ForeColor = Color.FromArgb(180, 180, 190),
             Font = new Font("Segoe UI", 8.5f),
-            Location = new Point(6, 122),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
         };
-        pnlFilters.Controls.Add(lblFilterPrefix);
+        tblTipoPeriodo.Controls.Add(lblFilterPrefix, 0, 0);
 
         cmbBatchFilterPrefix = new ComboBox
         {
-            Location = new Point(56, 120),
-            Size = new Size(120, 26),
+            Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(40, 40, 55),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
@@ -881,23 +986,21 @@ public partial class Form1 : Form
         cmbBatchFilterPrefix.Items.Add("(Todos)");
         cmbBatchFilterPrefix.SelectedIndex = 0;
         cmbBatchFilterPrefix.SelectedIndexChanged += (_, _) => ApplyBatchFilters();
-        pnlFilters.Controls.Add(cmbBatchFilterPrefix);
+        tblTipoPeriodo.Controls.Add(cmbBatchFilterPrefix, 1, 0);
 
-        // Filtro por periodo
         var lblFilterDays = new Label
         {
-            Text = "Periodo:",
+            Text = "Período:",
             ForeColor = Color.FromArgb(180, 180, 190),
             Font = new Font("Segoe UI", 8.5f),
-            Location = new Point(184, 122),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
         };
-        pnlFilters.Controls.Add(lblFilterDays);
+        tblTipoPeriodo.Controls.Add(lblFilterDays, 2, 0);
 
         cmbBatchFilterDays = new ComboBox
         {
-            Location = new Point(244, 120),
-            Size = new Size(68, 26),
+            Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(40, 40, 55),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
@@ -907,23 +1010,35 @@ public partial class Form1 : Form
         cmbBatchFilterDays.Items.AddRange(new object[] { "Todos", "7d", "15d", "30d", "60d", "90d" });
         cmbBatchFilterDays.SelectedIndex = 0;
         cmbBatchFilterDays.SelectedIndexChanged += (_, _) => ApplyBatchFilters();
-        pnlFilters.Controls.Add(cmbBatchFilterDays);
+        tblTipoPeriodo.Controls.Add(cmbBatchFilterDays, 3, 0);
 
-        // Botoes aplicar/limpar filtros
+        tblFilters.Controls.Add(tblTipoPeriodo, 0, 4);
+        tblFilters.SetColumnSpan(tblTipoPeriodo, 2);
+
+        // Row 5: Botoes aplicar/limpar
+        var pnlFilterButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 4, 0, 0),
+            WrapContents = false,
+            AutoSize = false
+        };
+
         btnBatchApplyFilters = new Button
         {
             Text = "Aplicar Filtros",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 100, 180),
             ForeColor = Color.White,
-            Size = new Size(148, 28),
-            Location = new Point(6, 152),
+            Size = new Size(120, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Margin = new Padding(0, 0, 6, 0)
         };
         btnBatchApplyFilters.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 200);
         btnBatchApplyFilters.Click += (_, _) => ApplyBatchFilters();
-        pnlFilters.Controls.Add(btnBatchApplyFilters);
+        pnlFilterButtons.Controls.Add(btnBatchApplyFilters);
 
         btnBatchClearFilters = new Button
         {
@@ -931,26 +1046,35 @@ public partial class Form1 : Form
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(70, 50, 50),
             ForeColor = Color.White,
-            Size = new Size(80, 28),
-            Location = new Point(160, 152),
+            Size = new Size(75, 26),
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 8.5f)
+            Font = new Font("Segoe UI", 8.5f),
+            Margin = new Padding(0, 0, 0, 0)
         };
         btnBatchClearFilters.FlatAppearance.BorderColor = Color.FromArgb(120, 60, 60);
         btnBatchClearFilters.Click += BtnBatchClearFilters_Click;
-        pnlFilters.Controls.Add(btnBatchClearFilters);
+        pnlFilterButtons.Controls.Add(btnBatchClearFilters);
 
-        // Label com resultado do filtro
+        tblFilters.Controls.Add(pnlFilterButtons, 0, 5);
+        tblFilters.SetColumnSpan(pnlFilterButtons, 2);
+
+        // Label com resultado do filtro (no rodapé do painel)
         var lblFilterResult = new Label
         {
             Name = "lblFilterResult",
             Text = "",
             ForeColor = Color.FromArgb(160, 160, 180),
             Font = new Font("Segoe UI", 8f, FontStyle.Italic),
-            Location = new Point(6, 185),
-            AutoSize = true
+            Dock = DockStyle.Bottom,
+            Height = 18,
+            TextAlign = ContentAlignment.MiddleLeft
         };
+
+        // Montar painel de filtros (ordem WinForms: Fill por ultimo)
+        pnlFilters.Controls.Add(tblFilters);
         pnlFilters.Controls.Add(lblFilterResult);
+        pnlFilters.Controls.Add(lblFiltersTitle);
+        lblFiltersTitle.BringToFront();
 
         // Adicionar ao pnlBatchLeft na ordem correta para WinForms docking:
         // Fill primeiro, depois Bottom, depois Top (ultimo adicionado com Top fica mais acima)
@@ -1182,6 +1306,63 @@ public partial class Form1 : Form
             AutoSize = true,
             Location = new Point(x, y)
         };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  LAYOUT RESPONSIVO
+    // ══════════════════════════════════════════════════════════════════
+
+    private void LayoutTopPanel()
+    {
+        if (txtBranchA == null || txtBranchB == null || btnSwap == null || btnAnalyze == null)
+            return;
+
+        var w = pnlTop.ClientSize.Width;
+        const int pad = 12;
+        const int swapW = 36;
+        const int analyzeW = 110;
+        const int gap = 6;
+        const int yLabel = 42;
+        const int yCombo = 58;
+
+        // ── Botoes superiores (direita, linha 1) ──
+        var rx = w - pad;
+        var btnFetchFullCtrl = pnlTop.Controls.OfType<Button>().FirstOrDefault(b => b.Text == "\u25BC");
+        if (btnFetchFullCtrl != null)
+        {
+            btnFetchFullCtrl.Location = new Point(rx - btnFetchFullCtrl.Width, 4);
+            rx = btnFetchFullCtrl.Left - 2;
+        }
+        btnFetch.Location = new Point(rx - btnFetch.Width, 4);
+        rx = btnFetch.Left - 4;
+        btnSetRepo.Location = new Point(rx - btnSetRepo.Width, 4);
+
+        // ── Linha 2: [ComboA] [<>] [ComboB] [ANALISAR] ──
+        // Labels ficam acima dos combos
+        var leftX = pad;
+        var rightEnd = w - pad;
+        var comboArea = rightEnd - leftX - swapW - analyzeW - gap * 3;
+        var comboW = Math.Max(150, comboArea / 2);
+
+        // Receptor (A)
+        lblA.Location = new Point(leftX, yLabel);
+        txtBranchA.Location = new Point(leftX, yCombo);
+        txtBranchA.Width = comboW;
+
+        // Swap
+        var swapX = leftX + comboW + gap;
+        btnSwap.Location = new Point(swapX, yCombo);
+
+        // Feature (B)
+        var bX = swapX + swapW + gap;
+        lblB.Location = new Point(bX, yLabel);
+        txtBranchB.Location = new Point(bX, yCombo);
+        txtBranchB.Width = comboW;
+
+        // Analisar
+        var analyzeX = bX + comboW + gap;
+        btnAnalyze.Location = new Point(analyzeX, yCombo);
+        btnAnalyze.Width = Math.Max(analyzeW, rightEnd - analyzeX);
     }
 
     // ══════════════════════════════════════════════════════════════════
