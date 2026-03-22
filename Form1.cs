@@ -5,6 +5,7 @@ namespace BranchAnalyzer;
 public partial class Form1 : Form
 {
     private readonly GitService _git = new();
+    private readonly AppSettings _settings = AppSettings.Load();
 
     // ── Controles ──────────────────────────────────────────────────
     private TextBox txtBranchA = null!;
@@ -63,6 +64,8 @@ public partial class Form1 : Form
     {
         InitializeComponent();
         SetupUI();
+        RestoreWindowState();
+        FormClosing += (_, _) => SaveSettings();
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -339,6 +342,14 @@ public partial class Form1 : Form
 
         // Auto-detectar repo atual
         TryAutoDetectRepo();
+
+        // Restaurar branches salvos
+        if (!string.IsNullOrEmpty(_settings.LastBranchA))
+            txtBranchA.Text = _settings.LastBranchA;
+        if (!string.IsNullOrEmpty(_settings.LastBranchB))
+            txtBranchB.Text = _settings.LastBranchB;
+        if (!string.IsNullOrEmpty(_settings.LastBatchReceptor))
+            txtBatchReceptor.Text = _settings.LastBatchReceptor;
     }
 
     private void SetupBranchAutocomplete(TextBox txt, ListBox lst, Point relativePos)
@@ -1264,11 +1275,81 @@ public partial class Form1 : Form
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  SETTINGS
+    // ══════════════════════════════════════════════════════════════════
+
+    private void RestoreWindowState()
+    {
+        if (_settings.WindowWidth > 0 && _settings.WindowHeight > 0)
+        {
+            var bounds = new Rectangle(
+                _settings.WindowX, _settings.WindowY,
+                _settings.WindowWidth, _settings.WindowHeight);
+
+            // Garantir que a janela está visível em algum monitor
+            if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(bounds)))
+            {
+                StartPosition = FormStartPosition.Manual;
+                Location = new Point(_settings.WindowX, _settings.WindowY);
+                Size = new Size(_settings.WindowWidth, _settings.WindowHeight);
+            }
+        }
+
+        if (_settings.WindowMaximized)
+            WindowState = FormWindowState.Maximized;
+
+        if (_settings.LastSelectedTab >= 0 && _settings.LastSelectedTab < tabs.TabCount)
+            tabs.SelectedIndex = _settings.LastSelectedTab;
+    }
+
+    private void SaveSettings()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            _settings.WindowMaximized = true;
+            // Manter as coordenadas do estado normal (antes de maximizar)
+            _settings.WindowWidth = RestoreBounds.Width;
+            _settings.WindowHeight = RestoreBounds.Height;
+            _settings.WindowX = RestoreBounds.X;
+            _settings.WindowY = RestoreBounds.Y;
+        }
+        else
+        {
+            _settings.WindowMaximized = false;
+            _settings.WindowWidth = Width;
+            _settings.WindowHeight = Height;
+            _settings.WindowX = Left;
+            _settings.WindowY = Top;
+        }
+
+        _settings.LastSelectedTab = tabs.SelectedIndex;
+
+        // Salvar branches usados por último
+        if (!string.IsNullOrEmpty(txtBranchA.Text))
+            _settings.LastBranchA = txtBranchA.Text;
+        if (!string.IsNullOrEmpty(txtBranchB.Text))
+            _settings.LastBranchB = txtBranchB.Text;
+        if (!string.IsNullOrEmpty(txtBatchReceptor.Text))
+            _settings.LastBatchReceptor = txtBatchReceptor.Text;
+
+        _settings.Save();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  EVENTOS
     // ══════════════════════════════════════════════════════════════════
 
     private void TryAutoDetectRepo()
     {
+        // 1) Restaurar último repositório salvo nas settings
+        if (!string.IsNullOrEmpty(_settings.LastRepoPath)
+            && Directory.Exists(Path.Combine(_settings.LastRepoPath, ".git")))
+        {
+            SetRepo(_settings.LastRepoPath);
+            return;
+        }
+
+        // 2) Subir a árvore de diretórios a partir do exe
         var currentDir = AppDomain.CurrentDomain.BaseDirectory;
         var dir = new DirectoryInfo(currentDir);
         while (dir != null)
@@ -1280,8 +1361,6 @@ public partial class Form1 : Form
             }
             dir = dir.Parent;
         }
-        if (Directory.Exists(@"C:\DEV\Frequencia\.git"))
-            SetRepo(@"C:\DEV\Frequencia");
     }
 
     private void SetRepo(string path)
@@ -1292,6 +1371,10 @@ public partial class Form1 : Form
         SetStatus("Carregando branches...");
         LoadBranches();
         SetStatus($"Repositorio configurado: {path}");
+
+        _settings.AddRecentRepo(path);
+        _settings.Save();
+
         // Carregar info do branch atual se a aba Meu Branch estiver visivel
         if (tabs.SelectedTab == tabMyBranch)
             LoadMyBranchInfo();
