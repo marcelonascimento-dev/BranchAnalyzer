@@ -494,4 +494,157 @@ public class GitService
         if (string.IsNullOrEmpty(output)) return new List<string>();
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
     }
+
+    // ── Clone de repositório remoto ─────────────────────────────
+
+    /// <summary>Diretório cache para repositórios clonados via URL</summary>
+    public static string GetCacheDir(string? customPath = null)
+    {
+        var dir = !string.IsNullOrWhiteSpace(customPath)
+            ? customPath
+            : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "repos_cache");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>Extrai nome do repositório a partir da URL</summary>
+    public static string GetRepoNameFromUrl(string url)
+    {
+        url = url.TrimEnd('/');
+        if (url.EndsWith(".git")) url = url[..^4];
+        var lastSlash = url.LastIndexOf('/');
+        return lastSlash >= 0 ? url[(lastSlash + 1)..] : url;
+    }
+
+    /// <summary>Retorna o caminho local para um repositório clonado via URL</summary>
+    public static string GetCachedRepoPath(string url, string? customCachePath = null)
+    {
+        var repoName = GetRepoNameFromUrl(url);
+        return Path.Combine(GetCacheDir(customCachePath), repoName);
+    }
+
+    /// <summary>Verifica se um repositório já foi clonado no cache</summary>
+    public static bool IsCachedRepo(string url, string? customCachePath = null)
+    {
+        var path = GetCachedRepoPath(url, customCachePath);
+        return Directory.Exists(Path.Combine(path, ".git"));
+    }
+
+    /// <summary>
+    /// Clona um repositório remoto para o cache local.
+    /// Reporta progresso via callback. Retorna o caminho local.
+    /// </summary>
+    public static (string path, string error) CloneRepository(string url, Action<string>? onProgress = null, string? customCachePath = null)
+    {
+        var repoName = GetRepoNameFromUrl(url);
+        var targetPath = GetCachedRepoPath(url, customCachePath);
+
+        // Se já existe, faz fetch ao invés de clonar novamente
+        if (Directory.Exists(Path.Combine(targetPath, ".git")))
+        {
+            onProgress?.Invoke("Repositório já existe no cache. Atualizando...");
+            var fetchResult = RunGitStatic(targetPath, "fetch", "--prune", "--no-tags");
+            if (fetchResult.exitCode != 0)
+                return (targetPath, $"Erro ao atualizar: {fetchResult.stderr}");
+            onProgress?.Invoke("Repositório atualizado com sucesso.");
+            return (targetPath, "");
+        }
+
+        onProgress?.Invoke($"Clonando {repoName}...");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.ArgumentList.Add("clone");
+        psi.ArgumentList.Add("--progress");
+        psi.ArgumentList.Add(url);
+        psi.ArgumentList.Add(targetPath);
+
+        using var proc = Process.Start(psi)!;
+
+        // Git envia progresso via stderr
+        var errorBuilder = new StringBuilder();
+        proc.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data == null) return;
+            var line = e.Data.Trim();
+            if (!string.IsNullOrEmpty(line))
+            {
+                onProgress?.Invoke(line);
+                errorBuilder.AppendLine(line);
+            }
+        };
+        proc.BeginErrorReadLine();
+        proc.StandardOutput.ReadToEnd();
+        proc.WaitForExit(600_000); // 10 min timeout
+
+        if (proc.ExitCode != 0)
+        {
+            // Limpar diretório parcial
+            try { if (Directory.Exists(targetPath)) Directory.Delete(targetPath, true); } catch { }
+            return ("", $"Erro ao clonar repositório (exit code {proc.ExitCode}):\n{errorBuilder}");
+        }
+
+        onProgress?.Invoke("Clone concluído com sucesso!");
+        return (targetPath, "");
+    }
+
+    /// <summary>Executa git em um diretório específico (estático)</summary>
+    private static (string stdout, string stderr, int exitCode) RunGitStatic(string workDir, params string[] args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        using var proc = Process.Start(psi)!;
+        var stdout = proc.StandardOutput.ReadToEnd();
+        var stderr = proc.StandardError.ReadToEnd();
+        proc.WaitForExit(60_000);
+        return (stdout.Trim(), stderr.Trim(), proc.ExitCode);
+    }
+
+    /// <summary>Valida se uma URL de git é acessível (ls-remote)</summary>
+    public static (bool ok, string error) ValidateGitUrl(string url)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add("ls-remote");
+        psi.ArgumentList.Add("--heads");
+        psi.ArgumentList.Add(url);
+
+        try
+        {
+            using var proc = Process.Start(psi)!;
+            proc.StandardOutput.ReadToEnd();
+            var stderr = proc.StandardError.ReadToEnd();
+            proc.WaitForExit(30_000);
+            return proc.ExitCode == 0 ? (true, "") : (false, stderr.Trim());
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
 }

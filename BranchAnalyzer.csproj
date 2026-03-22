@@ -7,6 +7,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>BranchAnalyzer</AssemblyName>
+    <Version>1.0.0</Version>
+    <Product>Branch Analyzer</Product>
+    <Description>Ferramenta de análise de branches Git</Description>
   </PropertyGroup>
 
 </Project>

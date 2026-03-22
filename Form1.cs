@@ -1437,10 +1437,26 @@ public partial class Form1 : Form
             && Directory.Exists(Path.Combine(_settings.LastRepoPath, ".git")))
         {
             SetRepo(_settings.LastRepoPath, autoFetch: true);
+            // Mostrar URL se foi clonado via URL
+            if (!string.IsNullOrEmpty(_settings.LastRepoUrl))
+                lblRepo.Text = $"{_settings.LastRepoUrl}  →  {_settings.LastRepoPath}";
             return;
         }
 
-        // 2) Subir a árvore de diretórios a partir do exe
+        // 2) Se tinha uma URL salva, tentar o caminho do cache
+        if (!string.IsNullOrEmpty(_settings.LastRepoUrl))
+        {
+            var cacheDir = string.IsNullOrWhiteSpace(_settings.CloneCachePath) ? null : _settings.CloneCachePath;
+            var cachedPath = GitService.GetCachedRepoPath(_settings.LastRepoUrl, cacheDir);
+            if (Directory.Exists(Path.Combine(cachedPath, ".git")))
+            {
+                SetRepo(cachedPath, autoFetch: true);
+                lblRepo.Text = $"{_settings.LastRepoUrl}  →  {cachedPath}";
+                return;
+            }
+        }
+
+        // 3) Subir a árvore de diretórios a partir do exe
         var currentDir = AppDomain.CurrentDomain.BaseDirectory;
         var dir = new DirectoryInfo(currentDir);
         while (dir != null)
@@ -1571,17 +1587,12 @@ public partial class Form1 : Form
 
     private void BtnSetRepo_Click(object? sender, EventArgs e)
     {
-        using var dlg = new FolderBrowserDialog
+        var cachePath = string.IsNullOrWhiteSpace(_settings.CloneCachePath) ? null : _settings.CloneCachePath;
+        using var dlg = new RepoSelectDialog(_settings.RecentRepoPaths, cachePath);
+        if (dlg.ShowDialog() == DialogResult.OK && !string.IsNullOrEmpty(dlg.SelectedRepoPath))
         {
-            Description = "Selecione a pasta do reposit\u00f3rio Git",
-            UseDescriptionForTitle = true
-        };
-        if (dlg.ShowDialog() == DialogResult.OK)
-        {
-            if (Directory.Exists(Path.Combine(dlg.SelectedPath, ".git")))
-                SetRepo(dlg.SelectedPath);
-            else
-                MessageBox.Show("A pasta selecionada n\u00e3o \u00e9 um reposit\u00f3rio Git.", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            _settings.LastRepoUrl = dlg.SelectedRepoUrl;
+            SetRepo(dlg.SelectedRepoPath);
         }
     }
 

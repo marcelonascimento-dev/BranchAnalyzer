@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Publish
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
+            -o publish
+
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "release\BranchAnalyzer" -Force
+          Copy-Item "publish\BranchAnalyzer.exe" "release\BranchAnalyzer\"
+          Copy-Item "README.md" "release\BranchAnalyzer\" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "release\BranchAnalyzer\*" -DestinationPath "release\BranchAnalyzer-${{ github.ref_name }}.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Branch Analyzer ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            release/BranchAnalyzer-${{ github.ref_name }}.zip
+            publish/BranchAnalyzer.exe

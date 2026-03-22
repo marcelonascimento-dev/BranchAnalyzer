@@ -14,6 +14,7 @@ public class AppSettings
 
     // ── Repositório ──────────────────────────────────────────────────
     public string LastRepoPath { get; set; } = "";
+    public string? LastRepoUrl { get; set; }
     public List<string> RecentRepoPaths { get; set; } = new();
 
     // ── Branches usados por último ───────────────────────────────────
@@ -31,6 +32,9 @@ public class AppSettings
 
     // ── Comportamento ────────────────────────────────────────────────
     public bool FetchOnOpen { get; set; } = false;
+
+    // ── Cache de repositórios clonados ────────────────────────────
+    public string CloneCachePath { get; set; } = "";
 
     // ── Métodos ──────────────────────────────────────────────────────
 
