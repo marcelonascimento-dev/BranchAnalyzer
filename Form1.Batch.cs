@@ -495,8 +495,25 @@ public partial class Form1
             splitBatch.Panel1.Controls.Add(ctrl);
         }
 
+        // Dashboard panel (hidden until analysis completes)
+        pnlBatchDashboard = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 70,
+            BackColor = Color.FromArgb(30, 30, 42),
+            Visible = false,
+            Padding = new Padding(10, 6, 10, 6)
+        };
+        pnlBatchDashboard.Paint += (s, e) =>
+        {
+            // Draw bottom border
+            using var pen = new Pen(Color.FromArgb(50, 50, 70), 1);
+            e.Graphics.DrawLine(pen, 0, pnlBatchDashboard.Height - 1, pnlBatchDashboard.Width, pnlBatchDashboard.Height - 1);
+        };
+
         // Grid no Panel2
         splitBatch.Panel2.Controls.Add(dgvBatchResults);
+        splitBatch.Panel2.Controls.Add(pnlBatchDashboard);
 
         // Ordem IMPORTA no WinForms: adicionar Fill primeiro, depois Top
         // O ultimo adicionado com Dock=Top reserva espaco antes do Fill
@@ -711,7 +728,10 @@ public partial class Form1
             var withConflicts = _batchResults.Count(r => r.ConflitosArquivos > 0);
 
             if (!ct.IsCancellationRequested)
+            {
                 SetStatus($"Lote concluido em {sw.Elapsed:mm\\:ss}: {_batchResults.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos");
+                UpdateBatchDashboard(sw.Elapsed, merged, pending, withConflicts);
+            }
 
             pgBatch.Visible = false;
             btnBatchCancel.Visible = false;
@@ -815,6 +835,86 @@ public partial class Form1
             _ => Color.FromArgb(180, 80, 80)
         };
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DASHBOARD RESUMO DO LOTE
+    // ══════════════════════════════════════════════════════════════════
+
+    private void UpdateBatchDashboard(TimeSpan elapsed, int merged, int pending, int withConflicts)
+    {
+        pnlBatchDashboard.Controls.Clear();
+        pnlBatchDashboard.Visible = true;
+
+        var total = _batchResults.Count;
+        var errors = _batchResults.Count(r => r.Status == "ERRO" || r.Status == "NAO ENCONTRADO");
+
+        // Stats cards
+        AddDashboardCard(pnlBatchDashboard, 0, "Total", total.ToString(), Color.FromArgb(120, 180, 255));
+        AddDashboardCard(pnlBatchDashboard, 1, "Merged", merged.ToString(), Color.FromArgb(80, 220, 80));
+        AddDashboardCard(pnlBatchDashboard, 2, "Pendentes", pending.ToString(), Color.FromArgb(255, 200, 80));
+        AddDashboardCard(pnlBatchDashboard, 3, "Conflitos", withConflicts.ToString(), Color.FromArgb(255, 100, 80));
+        if (errors > 0)
+            AddDashboardCard(pnlBatchDashboard, 4, "Erros", errors.ToString(), Color.FromArgb(180, 80, 80));
+
+        // Top 5 branches com mais commits pendentes
+        var top5 = _batchResults
+            .Where(r => r.Status == "PENDENTE")
+            .OrderByDescending(r => r.CommitsPendentes)
+            .Take(5)
+            .ToList();
+
+        if (top5.Count > 0)
+        {
+            var lblTop5 = new Label
+            {
+                Text = "Top pendentes: " + string.Join("  |  ", top5.Select(r => $"{Truncate(r.BranchFeature, 25)} ({r.CommitsPendentes}c)")),
+                ForeColor = Color.FromArgb(160, 160, 180),
+                Font = new Font("Segoe UI", 8f),
+                AutoSize = true,
+                Location = new Point(10, 48)
+            };
+            pnlBatchDashboard.Controls.Add(lblTop5);
+        }
+
+        // Tempo de execução
+        var lblTime = new Label
+        {
+            Text = $"Tempo: {elapsed:mm\\:ss}",
+            ForeColor = Color.FromArgb(140, 140, 160),
+            Font = new Font("Segoe UI", 8f),
+            AutoSize = true,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Location = new Point(pnlBatchDashboard.Width - 100, 6)
+        };
+        pnlBatchDashboard.Controls.Add(lblTime);
+    }
+
+    private static void AddDashboardCard(Panel parent, int index, string label, string value, Color color)
+    {
+        int x = 10 + index * 115;
+        var lblValue = new Label
+        {
+            Text = value,
+            ForeColor = color,
+            Font = new Font("Segoe UI", 16, FontStyle.Bold),
+            Location = new Point(x, 2),
+            AutoSize = true
+        };
+        parent.Controls.Add(lblValue);
+
+        var lblLabel = new Label
+        {
+            Text = label,
+            ForeColor = Color.FromArgb(140, 140, 160),
+            Font = new Font("Segoe UI", 8f),
+            Location = new Point(x, 30),
+            AutoSize = true
+        };
+        parent.Controls.Add(lblLabel);
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "...";
 
     // ══════════════════════════════════════════════════════════════════
     //  DRILL-DOWN: Duplo-clique em resultado do lote

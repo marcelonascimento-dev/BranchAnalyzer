@@ -384,6 +384,7 @@ public class GitService
                 Prefix = prefix
             });
         }
+
         return result;
     }
 

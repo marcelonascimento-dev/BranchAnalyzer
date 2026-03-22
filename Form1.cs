@@ -33,6 +33,17 @@ public partial class Form1 : Form
     private Label lblMergeBase = null!;
     private Panel pnlMergeIcon = null!;
     private DataGridView dgvMergeCommits = null!;
+    private TextBox txtCommitSearch = null!;
+    private Label lblCommitSearchCount = null!;
+    private List<CommitInfo> _allMergeCommits = new();
+
+    // Branch Health
+    private TabPage tabBranchHealth = null!;
+    private DataGridView dgvBranchHealth = null!;
+    private Label lblHealthSummary = null!;
+
+    // Batch dashboard
+    private Panel pnlBatchDashboard = null!;
 
     // Meu Branch
     private TabPage tabMyBranch = null!;
@@ -333,6 +344,7 @@ public partial class Form1 : Form
         SetupMergeStatusTab();
         SetupMyBranchTab();
         SetupBatchTab();
+        SetupBranchHealthTab();
 
         // Mover aba Lote para segunda posicao (indice 1)
         tabs.TabPages.Remove(tabBatch);
@@ -352,6 +364,10 @@ public partial class Form1 : Form
             else if (tabs.SelectedTab == tabMyBranch)
             {
                 LoadMyBranchInfo();
+            }
+            else if (tabs.SelectedTab == tabBranchHealth)
+            {
+                LoadBranchHealth();
             }
         };
     }

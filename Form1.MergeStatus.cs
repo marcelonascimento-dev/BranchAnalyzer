@@ -47,7 +47,7 @@ public partial class Form1
         lblMergeBase = CreateInfoLabel("", 120, 110);
         pnlMergeSummary.Controls.Add(lblMergeBase);
 
-        // Painel com label + botoes de export
+        // Painel com label + busca + botoes de export
         var pnlMergeCommitsBar = new Panel
         {
             Dock = DockStyle.Top,
@@ -64,14 +64,39 @@ public partial class Form1
         };
         pnlMergeCommitsBar.Controls.Add(lblMergeCommitsTitle);
 
+        // Search box for commits
+        txtCommitSearch = new TextBox
+        {
+            PlaceholderText = "Buscar commits (mensagem, autor, hash)...",
+            BackColor = Color.FromArgb(40, 40, 55),
+            ForeColor = Color.White,
+            Font = new Font("Consolas", 9f),
+            Size = new Size(280, 24),
+            Location = new Point(280, 4),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+        txtCommitSearch.TextChanged += (_, _) => FilterMergeCommits();
+        pnlMergeCommitsBar.Controls.Add(txtCommitSearch);
+
+        lblCommitSearchCount = new Label
+        {
+            Text = "",
+            ForeColor = Color.FromArgb(120, 180, 255),
+            Font = new Font("Segoe UI", 8f),
+            AutoSize = true,
+            Location = new Point(565, 8),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        pnlMergeCommitsBar.Controls.Add(lblCommitSearchCount);
+
         var btnExportCsv = new Button
         {
-            Text = "Exportar CSV",
+            Text = "CSV",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 90, 60),
             ForeColor = Color.White,
-            Size = new Size(100, 24),
-            Location = new Point(300, 4),
+            Size = new Size(55, 24),
+            Location = new Point(680, 4),
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 8f),
             Anchor = AnchorStyles.Top | AnchorStyles.Right
@@ -82,12 +107,12 @@ public partial class Form1
 
         var btnExportJson = new Button
         {
-            Text = "Exportar JSON",
+            Text = "JSON",
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(40, 70, 120),
             ForeColor = Color.White,
-            Size = new Size(105, 24),
-            Location = new Point(405, 4),
+            Size = new Size(55, 24),
+            Location = new Point(740, 4),
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 8f),
             Anchor = AnchorStyles.Top | AnchorStyles.Right
@@ -156,9 +181,34 @@ public partial class Form1
 
         if (commits != null)
         {
+            _allMergeCommits = commits;
+            txtCommitSearch.Text = "";
             dgvMergeCommits.DataSource = null;
             dgvMergeCommits.DataSource = commits;
+            lblCommitSearchCount.Text = $"{commits.Count} commit(s)";
         }
+    }
+
+    private void FilterMergeCommits()
+    {
+        var query = txtCommitSearch.Text.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(query))
+        {
+            dgvMergeCommits.DataSource = null;
+            dgvMergeCommits.DataSource = _allMergeCommits;
+            lblCommitSearchCount.Text = $"{_allMergeCommits.Count} commit(s)";
+            return;
+        }
+
+        var filtered = _allMergeCommits.Where(c =>
+            c.Message.ToLowerInvariant().Contains(query) ||
+            c.Author.ToLowerInvariant().Contains(query) ||
+            c.Hash.ToLowerInvariant().Contains(query)
+        ).ToList();
+
+        dgvMergeCommits.DataSource = null;
+        dgvMergeCommits.DataSource = filtered;
+        lblCommitSearchCount.Text = $"{filtered.Count}/{_allMergeCommits.Count} commit(s)";
     }
 
     private void AppendRtb(RichTextBox rtb, string text, Color color, bool bold = false)
