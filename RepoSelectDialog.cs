@@ -334,7 +334,7 @@ public class RepoSelectDialog : Form
                     {
                         Invoke(() => lblProgress.Text = progress);
                     }
-                    catch { }
+                    catch (Exception ex) { Logger.Warn($"Clone progress UI update failed: {ex.Message}"); }
                 }, _customCachePath);
             });
 

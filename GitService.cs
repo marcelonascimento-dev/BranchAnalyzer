@@ -588,7 +588,7 @@ public class GitService
         if (proc.ExitCode != 0)
         {
             // Limpar diretório parcial
-            try { if (Directory.Exists(targetPath)) Directory.Delete(targetPath, true); } catch { }
+            try { if (Directory.Exists(targetPath)) Directory.Delete(targetPath, true); } catch (Exception ex) { Logger.Error($"Failed to clean partial clone at {targetPath}", ex); }
             return ("", $"Erro ao clonar repositório (exit code {proc.ExitCode}):\n{errorBuilder}");
         }
 
@@ -618,6 +618,327 @@ public class GitService
         proc.WaitForExit(60_000);
         return (stdout.Trim(), stderr.Trim(), proc.ExitCode);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ASYNC METHODS
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>Timeout padrão para comandos git assíncronos (em ms).</summary>
+    public int AsyncTimeoutMs { get; set; } = 60_000;
+
+    /// <summary>
+    /// Executa um comando git de forma assíncrona usando OutputDataReceived/ErrorDataReceived.
+    /// Suporta CancellationToken para cancelar o processo.
+    /// </summary>
+    private async Task<(string stdout, string stderr, int exitCode)> RunGitAsync(
+        string[] args, CancellationToken ct = default)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = RepoPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var stdoutBuilder = new StringBuilder();
+        var stderrBuilder = new StringBuilder();
+
+        proc.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null) stdoutBuilder.AppendLine(e.Data);
+        };
+        proc.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null) stderrBuilder.AppendLine(e.Data);
+        };
+        proc.Exited += (_, _) =>
+        {
+            // Small delay to let buffered data arrive before reading ExitCode
+            tcs.TrySetResult(proc.ExitCode);
+        };
+
+        using var ctsTimeout = new CancellationTokenSource(AsyncTimeoutMs);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, ctsTimeout.Token);
+
+        await using var reg = linked.Token.Register(() =>
+        {
+            try
+            {
+                if (!proc.HasExited) proc.Kill(entireProcessTree: true);
+            }
+            catch { }
+            tcs.TrySetCanceled(linked.Token);
+        });
+
+        try
+        {
+            proc.Start();
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
+            var exitCode = await tcs.Task.ConfigureAwait(false);
+
+            // Give a tiny window for remaining data events
+            await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
+
+            proc.Dispose();
+            return (stdoutBuilder.ToString().Trim(), stderrBuilder.ToString().Trim(), exitCode);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            proc.Dispose();
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            proc.Dispose();
+            // Timeout
+            throw new TimeoutException(
+                $"Git command timed out after {AsyncTimeoutMs}ms: git {string.Join(' ', args)}");
+        }
+        catch
+        {
+            proc.Dispose();
+            throw;
+        }
+    }
+
+    private async Task<string> GitAsync(string[] args, CancellationToken ct = default)
+    {
+        var (stdout, _, _) = await RunGitAsync(args, ct).ConfigureAwait(false);
+        return stdout;
+    }
+
+    // ── Async fetch ─────────────────────────────────────────────────
+
+    public async Task FetchOriginAsync(CancellationToken ct = default)
+    {
+        await RunGitAsync(["fetch", "origin"], ct).ConfigureAwait(false);
+    }
+
+    public async Task FetchPruneAsync(CancellationToken ct = default)
+    {
+        await RunGitAsync(["fetch", "--prune", "--no-tags"], ct).ConfigureAwait(false);
+    }
+
+    // ── Async branch listing ────────────────────────────────────────
+
+    public async Task<List<string>> GetAllBranchesAsync(CancellationToken ct = default)
+    {
+        var remote = await GitAsync(["branch", "-r", "--format=%(refname:short)"], ct)
+            .ConfigureAwait(false);
+        var all = new HashSet<string>();
+        foreach (var b in remote.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = b.Trim();
+            if (name.Contains("->")) continue;
+            var shortName = name.StartsWith("origin/") ? name["origin/".Length..] : name;
+            if (!string.IsNullOrEmpty(shortName))
+                all.Add(shortName);
+        }
+        return all.OrderBy(x => x).ToList();
+    }
+
+    public async Task<List<string>> GetLocalBranchesAsync(CancellationToken ct = default)
+    {
+        var local = await GitAsync(
+            ["branch", "--sort=-committerdate", "--format=%(refname:short)"], ct)
+            .ConfigureAwait(false);
+        var result = new List<string>();
+        foreach (var b in local.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = b.Trim();
+            if (!string.IsNullOrEmpty(name))
+                result.Add(name);
+        }
+        return result;
+    }
+
+    public async Task<List<string>> GetBranchesPrioritizedAsync(CancellationToken ct = default)
+    {
+        var localBranches = await GetLocalBranchesAsync(ct).ConfigureAwait(false);
+        var allRemote = await GetAllBranchesAsync(ct).ConfigureAwait(false);
+
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var b in localBranches)
+        {
+            if (seen.Add(b)) result.Add(b);
+        }
+        foreach (var b in allRemote)
+        {
+            if (seen.Add(b)) result.Add(b);
+        }
+        return result;
+    }
+
+    public async Task<List<BranchMetadata>> GetBranchesMetadataAsync(CancellationToken ct = default)
+    {
+        var output = await GitAsync(
+            ["for-each-ref", "--sort=-committerdate",
+             "--format=%(refname:short)|%(committerdate:short)|%(committerdate:iso8601)|%(authorname)",
+             "refs/remotes/origin/", "refs/heads/"], ct).ConfigureAwait(false);
+
+        var result = new List<BranchMetadata>();
+        var seen = new HashSet<string>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('|', 4);
+            if (parts.Length < 4) continue;
+            var name = parts[0].Trim();
+            var shortName = name.StartsWith("origin/") ? name["origin/".Length..] : name;
+            if (!seen.Add(shortName)) continue;
+
+            var prefix = "";
+            var slashIdx = shortName.IndexOf('/');
+            if (slashIdx > 0) prefix = shortName[..slashIdx];
+
+            result.Add(new BranchMetadata
+            {
+                FullName = name,
+                ShortName = shortName,
+                DateShort = parts[1].Trim(),
+                Date = DateTime.TryParse(parts[2].Trim(), out var d) ? d : DateTime.MinValue,
+                Author = parts[3].Trim(),
+                Prefix = prefix
+            });
+        }
+        return result;
+    }
+
+    // ── Async analysis methods ──────────────────────────────────────
+
+    public async Task<MergeStatus> CheckMergeStatusAsync(
+        string branchA, string branchB, CancellationToken ct = default)
+    {
+        var pendingTask = GitAsync(["log", "--oneline", $"{branchA}..{branchB}"], ct);
+        var aheadTask = GitAsync(["log", "--oneline", $"{branchB}..{branchA}"], ct);
+        var mergeBaseTask = GitAsync(["merge-base", branchA, branchB], ct);
+        var tipBTask = GitAsync(["rev-parse", branchB], ct);
+
+        await Task.WhenAll(pendingTask, aheadTask, mergeBaseTask, tipBTask).ConfigureAwait(false);
+
+        var pending = await pendingTask;
+        var ahead = await aheadTask;
+        var mergeBase = await mergeBaseTask;
+        var tipB = await tipBTask;
+
+        var pendingCount = string.IsNullOrEmpty(pending) ? 0 : pending.Split('\n').Length;
+        var aheadCount = string.IsNullOrEmpty(ahead) ? 0 : ahead.Split('\n').Length;
+        var isMerged = pendingCount == 0 || mergeBase == tipB;
+
+        return new MergeStatus
+        {
+            IsMerged = isMerged,
+            PendingCommits = pendingCount,
+            AheadCommits = aheadCount,
+            MergeBase = mergeBase
+        };
+    }
+
+    public async Task<List<CommitInfo>> GetPendingCommitsAsync(
+        string branchA, string branchB, CancellationToken ct = default)
+    {
+        var log = await GitAsync(
+            ["log", "--format=%h|%an|%ar|%ai|%s", $"{branchA}..{branchB}"], ct)
+            .ConfigureAwait(false);
+        return ParseCommits(log);
+    }
+
+    public async Task<List<FileChange>> GetChangedFilesAsync(
+        string branchA, string branchB, CancellationToken ct = default)
+    {
+        var diff = await GitAsync(
+            ["diff", "--name-status", $"{branchA}...{branchB}"], ct)
+            .ConfigureAwait(false);
+        var result = new List<FileChange>();
+        foreach (var line in diff.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('\t', 2);
+            if (parts.Length < 2) continue;
+            result.Add(new FileChange
+            {
+                Status = parts[0].Trim() switch
+                {
+                    "A" => "Adicionado",
+                    "M" => "Modificado",
+                    "D" => "Removido",
+                    var s when s.StartsWith("R") => "Renomeado",
+                    _ => parts[0].Trim()
+                },
+                StatusCode = parts[0].Trim()[0],
+                FilePath = parts[1].Trim()
+            });
+        }
+        return result;
+    }
+
+    public async Task<List<string>> DetectPotentialConflictsAsync(
+        string branchA, string branchB, CancellationToken ct = default)
+    {
+        var mergeBase = await GitAsync(["merge-base", branchA, branchB], ct)
+            .ConfigureAwait(false);
+        if (string.IsNullOrEmpty(mergeBase)) return new();
+
+        var filesATask = GitAsync(["diff", "--name-only", $"{mergeBase}..{branchA}"], ct);
+        var filesBTask = GitAsync(["diff", "--name-only", $"{mergeBase}..{branchB}"], ct);
+        await Task.WhenAll(filesATask, filesBTask).ConfigureAwait(false);
+
+        var filesA = (await filesATask)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var filesB = (await filesBTask)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+
+        return filesA.Intersect(filesB).OrderBy(x => x).ToList();
+    }
+
+    public async Task<BranchInfo> GetBranchInfoAsync(
+        string branchA, string branchB, CancellationToken ct = default)
+    {
+        var mergeBase = await GitAsync(["merge-base", branchA, branchB], ct)
+            .ConfigureAwait(false);
+
+        var baseDateTask = GitAsync(["log", "-1", "--format=%ai", mergeBase], ct);
+        var lastCommitTask = GitAsync(["log", "-1", "--format=%ai|%an|%s", branchB], ct);
+        var firstCommitTask = GitAsync(
+            ["log", "--reverse", "--format=%ai", $"{branchA}..{branchB}"], ct);
+
+        await Task.WhenAll(baseDateTask, lastCommitTask, firstCommitTask).ConfigureAwait(false);
+
+        var baseDate = await baseDateTask;
+        var lastCommit = await lastCommitTask;
+        var firstCommitLog = await firstCommitTask;
+        var firstLine = firstCommitLog
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+
+        var info = new BranchInfo
+        {
+            DivergenceDate = baseDate.Length >= 10 ? baseDate[..10] : ""
+        };
+
+        if (lastCommit.Contains('|'))
+        {
+            var p = lastCommit.Split('|', 3);
+            info.LastCommitDate = p[0].Length >= 10 ? p[0][..10] : "";
+            info.LastCommitAuthor = p.Length > 1 ? p[1] : "";
+            info.LastCommitMessage = p.Length > 2 ? p[2] : "";
+        }
+
+        info.FirstCommitDate = firstLine.Length >= 10 ? firstLine[..10] : "";
+        return info;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
 
     /// <summary>Valida se uma URL de git é acessível (ls-remote)</summary>
     public static (bool ok, string error) ValidateGitUrl(string url)
