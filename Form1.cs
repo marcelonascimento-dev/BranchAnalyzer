@@ -8,10 +8,8 @@ public partial class Form1 : Form
     private readonly AppSettings _settings = AppSettings.Load();
 
     // ── Controles ──────────────────────────────────────────────────
-    private TextBox txtBranchA = null!;
-    private ListBox lstBranchA = null!;
-    private TextBox txtBranchB = null!;
-    private ListBox lstBranchB = null!;
+    private ComboBox txtBranchA = null!;
+    private ComboBox txtBranchB = null!;
     private Button btnSetRepo = null!;
     private Button btnFetch = null!;
     private Button btnSwap = null!;
@@ -40,8 +38,7 @@ public partial class Form1 : Form
 
     // Batch (Verificacao em Lote)
     private TabPage tabBatch = null!;
-    private TextBox txtBatchReceptor = null!;
-    private ListBox lstBatchReceptor = null!;
+    private ComboBox txtBatchReceptor = null!;
     private CheckedListBox clbBatchBranches = null!;
     private DataGridView dgvBatchResults = null!;
     private Button btnBatchAnalyze = null!;
@@ -215,25 +212,8 @@ public partial class Form1 : Form
         };
         pnlTop.Controls.Add(lblA);
 
-        txtBranchA = new TextBox
-        {
-            Location = new Point(340, 82),
-            Size = new Size(280, 28),
-            BackColor = Color.FromArgb(40, 40, 55),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9.5f),
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        lstBranchA = new ListBox
-        {
-            Visible = false,
-            BackColor = Color.FromArgb(30, 30, 50),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9f),
-            BorderStyle = BorderStyle.FixedSingle,
-            IntegralHeight = false
-        };
-        SetupBranchAutocomplete(txtBranchA, lstBranchA, new Point(340, 110));
+        txtBranchA = CreateBranchComboBox(new Point(340, 82));
+        SetupBranchAutocomplete(txtBranchA);
         pnlTop.Controls.Add(txtBranchA);
 
         // Swap
@@ -265,25 +245,8 @@ public partial class Form1 : Form
         };
         pnlTop.Controls.Add(lblB);
 
-        txtBranchB = new TextBox
-        {
-            Location = new Point(672, 82),
-            Size = new Size(280, 28),
-            BackColor = Color.FromArgb(40, 40, 55),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9.5f),
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        lstBranchB = new ListBox
-        {
-            Visible = false,
-            BackColor = Color.FromArgb(30, 30, 50),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9f),
-            BorderStyle = BorderStyle.FixedSingle,
-            IntegralHeight = false
-        };
-        SetupBranchAutocomplete(txtBranchB, lstBranchB, new Point(672, 110));
+        txtBranchB = CreateBranchComboBox(new Point(672, 82));
+        SetupBranchAutocomplete(txtBranchB);
         pnlTop.Controls.Add(txtBranchB);
 
         // Botao analisar
@@ -332,14 +295,6 @@ public partial class Form1 : Form
         SetupTabs();
         tabs.BringToFront();
 
-        // Adicionar ListBoxes de autocomplete ao Form (para sobrepor outros controles)
-        Controls.Add(lstBranchA);
-        Controls.Add(lstBranchB);
-        Controls.Add(lstBatchReceptor);
-        lstBranchA.BringToFront();
-        lstBranchB.BringToFront();
-        lstBatchReceptor.BringToFront();
-
         // Auto-detectar repo atual
         TryAutoDetectRepo();
 
@@ -352,42 +307,53 @@ public partial class Form1 : Form
             txtBatchReceptor.Text = _settings.LastBatchReceptor;
     }
 
-    private void SetupBranchAutocomplete(TextBox txt, ListBox lst, Point relativePos)
+    private static ComboBox CreateBranchComboBox(Point location)
     {
-        lst.Size = new Size(txt.Width, 250);
-        lst.Visible = false;
-        lst.DrawMode = DrawMode.OwnerDrawFixed;
-        lst.ItemHeight = 20;
+        var cmb = new ComboBox
+        {
+            Location = location,
+            Size = new Size(280, 28),
+            BackColor = Color.FromArgb(40, 40, 55),
+            ForeColor = Color.White,
+            Font = new Font("Consolas", 9.5f),
+            FlatStyle = FlatStyle.Flat,
+            DropDownStyle = ComboBoxStyle.DropDown,
+            MaxDropDownItems = 20,
+            DropDownWidth = 320,
+            DropDownHeight = 300
+        };
+        return cmb;
+    }
 
-        bool _suppressFilter = false;
+    private void SetupBranchAutocomplete(ComboBox cmb)
+    {
+        cmb.DrawMode = DrawMode.OwnerDrawFixed;
+        cmb.ItemHeight = 20;
 
-        // Desenhar items com separador visual entre locais e remotos
-        lst.DrawItem += (_, e) =>
+        bool suppressFilter = false;
+
+        cmb.DrawItem += (_, e) =>
         {
             if (e.Index < 0) return;
             e.DrawBackground();
-            var item = lst.Items[e.Index]?.ToString() ?? "";
+            var item = cmb.Items[e.Index]?.ToString() ?? "";
             var isLocal = _localBranches.Contains(item, StringComparer.OrdinalIgnoreCase);
             var isSelected = (e.State & DrawItemState.Selected) != 0;
 
-            // Fundo
             var bgColor = isSelected ? Color.FromArgb(55, 55, 90) : Color.FromArgb(30, 30, 50);
             using var bgBrush = new SolidBrush(bgColor);
             e.Graphics.FillRectangle(bgBrush, e.Bounds);
 
-            // Separador visual: header "LOCAIS" / "REMOTOS"
             if (item == "── LOCAIS (recentes) ──" || item == "── REMOTOS ──")
             {
                 using var headerBrush = new SolidBrush(Color.FromArgb(100, 100, 140));
                 using var headerFont = new Font("Segoe UI", 7.5f, FontStyle.Bold);
                 e.Graphics.DrawString(item, headerFont, headerBrush, e.Bounds.X + 4, e.Bounds.Y + 3);
-                // Linha separadora
                 using var pen = new Pen(Color.FromArgb(60, 60, 80));
                 e.Graphics.DrawLine(pen, e.Bounds.X, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
                 return;
             }
 
-            // Indicador de local
             if (isLocal)
             {
                 using var dotBrush = new SolidBrush(Color.FromArgb(80, 200, 120));
@@ -397,31 +363,26 @@ public partial class Form1 : Form
             var textColor = isLocal ? Color.FromArgb(140, 230, 170) : Color.FromArgb(200, 200, 220);
             using var textBrush = new SolidBrush(textColor);
             using var font = new Font("Consolas", 9f);
-            e.Graphics.DrawString(item, font, textBrush, e.Bounds.X + (isLocal ? 16 : 16), e.Bounds.Y + 2);
+            e.Graphics.DrawString(item, font, textBrush, e.Bounds.X + 16, e.Bounds.Y + 2);
         };
 
-        void ShowDropdown(string? filter = null)
+        List<string> BuildItems(string? filter)
         {
-            List<string> items;
+            var items = new List<string>();
+            var localSet = new HashSet<string>(_localBranches, StringComparer.OrdinalIgnoreCase);
 
             if (string.IsNullOrEmpty(filter))
             {
-                // Sem filtro: mostrar locais primeiro, depois remotos
-                items = new List<string>();
                 if (_localBranches.Count > 0)
                 {
                     items.Add("── LOCAIS (recentes) ──");
                     items.AddRange(_localBranches.Take(15));
                 }
                 items.Add("── REMOTOS ──");
-                var localSet = new HashSet<string>(_localBranches, StringComparer.OrdinalIgnoreCase);
-                var remotos = _allBranches.Where(b => !localSet.Contains(b)).Take(30).ToList();
-                items.AddRange(remotos);
+                items.AddRange(_allBranches.Where(b => !localSet.Contains(b)).Take(30));
             }
             else
             {
-                // Com filtro: busca contains, locais primeiro
-                var localSet = new HashSet<string>(_localBranches, StringComparer.OrdinalIgnoreCase);
                 var matchLocal = _localBranches
                     .Where(b => b.Contains(filter, StringComparison.OrdinalIgnoreCase))
                     .ToList();
@@ -430,13 +391,9 @@ public partial class Form1 : Form
                     .Take(25)
                     .ToList();
 
-                items = new List<string>();
-                // Match exato primeiro
                 var exact = _allBranches.Where(b => b.Equals(filter, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (exact.Count > 0 && !matchLocal.Contains(exact[0], StringComparer.OrdinalIgnoreCase))
-                {
                     matchLocal.InsertRange(0, exact);
-                }
 
                 if (matchLocal.Count > 0)
                 {
@@ -450,112 +407,82 @@ public partial class Form1 : Form
                 }
             }
 
-            if (items.Count == 0 || (items.Count <= 2 && items.All(i => i.StartsWith("──"))))
-            {
-                lst.Visible = false;
+            return items;
+        }
+
+        void PopulateDropdown(string? filter)
+        {
+            var items = BuildItems(filter);
+            if (items.Count == 0 || items.All(i => i.StartsWith("──")))
                 return;
-            }
 
-            lst.Items.Clear();
+            suppressFilter = true;
+            var currentText = cmb.Text;
+            var selStart = cmb.SelectionStart;
+            cmb.Items.Clear();
             foreach (var item in items)
-                lst.Items.Add(item);
+                cmb.Items.Add(item);
+            cmb.Text = currentText;
+            cmb.SelectionStart = selStart;
+            cmb.SelectionLength = 0;
+            suppressFilter = false;
 
-            var screenPos = txt.PointToScreen(new Point(0, txt.Height));
-            var formPos = PointToClient(screenPos);
-            lst.Location = formPos;
-            var visibleItems = Math.Min(items.Count, 15);
-            lst.Size = new Size(Math.Max(txt.Width, 320), visibleItems * lst.ItemHeight + 4);
-            lst.Visible = true;
-            lst.BringToFront();
+            cmb.DroppedDown = true;
         }
 
-        // Ao clicar no TextBox: mostrar lista inicial (como combo)
-        txt.GotFocus += (_, _) =>
+        cmb.TextChanged += (_, _) =>
         {
-            if (!_suppressFilter && _allBranches.Count > 0)
-                ShowDropdown(string.IsNullOrEmpty(txt.Text) ? null : txt.Text.Trim());
+            if (suppressFilter) return;
+            var filter = cmb.Text.Trim();
+            PopulateDropdown(string.IsNullOrEmpty(filter) ? null : filter);
         };
 
-        txt.Click += (_, _) =>
+        cmb.SelectedIndexChanged += (_, _) =>
         {
-            if (!lst.Visible && !_suppressFilter && _allBranches.Count > 0)
-                ShowDropdown(string.IsNullOrEmpty(txt.Text) ? null : txt.Text.Trim());
+            if (suppressFilter) return;
+            var selected = cmb.SelectedItem?.ToString() ?? "";
+            if (selected.StartsWith("──"))
+            {
+                // Pular headers — selecionar o próximo item válido
+                suppressFilter = true;
+                var idx = cmb.SelectedIndex + 1;
+                while (idx < cmb.Items.Count && cmb.Items[idx]?.ToString()?.StartsWith("──") == true)
+                    idx++;
+                if (idx < cmb.Items.Count)
+                    cmb.SelectedIndex = idx;
+                suppressFilter = false;
+            }
         };
 
-        txt.TextChanged += (_, _) =>
+        cmb.DropDown += (_, _) =>
         {
-            if (_suppressFilter) return;
-            var filter = txt.Text.Trim();
-            ShowDropdown(string.IsNullOrEmpty(filter) ? null : filter);
+            if (_allBranches.Count > 0)
+            {
+                var filter = cmb.Text.Trim();
+                var items = BuildItems(string.IsNullOrEmpty(filter) ? null : filter);
+                suppressFilter = true;
+                var currentText = cmb.Text;
+                cmb.Items.Clear();
+                foreach (var item in items)
+                    cmb.Items.Add(item);
+                cmb.Text = currentText;
+                suppressFilter = false;
+            }
         };
 
-        void SelectItem()
+        cmb.KeyDown += (_, e) =>
         {
-            if (lst.SelectedIndex >= 0)
-            {
-                var selected = lst.SelectedItem?.ToString() ?? "";
-                if (selected.StartsWith("──")) return; // Ignorar headers
-                _suppressFilter = true;
-                txt.Text = selected;
-                txt.SelectionStart = txt.Text.Length;
-                _suppressFilter = false;
-                lst.Visible = false;
-            }
-        }
-
-        txt.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Down)
-            {
-                if (!lst.Visible)
-                {
-                    ShowDropdown(string.IsNullOrEmpty(txt.Text) ? null : txt.Text.Trim());
-                    return;
-                }
-                e.Handled = true;
-                var next = lst.SelectedIndex + 1;
-                // Pular headers
-                while (next < lst.Items.Count && lst.Items[next]?.ToString()?.StartsWith("──") == true)
-                    next++;
-                if (next < lst.Items.Count)
-                    lst.SelectedIndex = next;
-                else if (lst.Items.Count > 0)
-                {
-                    lst.SelectedIndex = 0;
-                    if (lst.Items[0]?.ToString()?.StartsWith("──") == true && lst.Items.Count > 1)
-                        lst.SelectedIndex = 1;
-                }
-            }
-            else if (e.KeyCode == Keys.Up && lst.Visible)
-            {
-                e.Handled = true;
-                var prev = lst.SelectedIndex - 1;
-                while (prev >= 0 && lst.Items[prev]?.ToString()?.StartsWith("──") == true)
-                    prev--;
-                if (prev >= 0)
-                    lst.SelectedIndex = prev;
-            }
-            else if ((e.KeyCode == Keys.Enter || e.KeyCode == Keys.Tab) && lst.Visible)
+            if (e.KeyCode == Keys.Enter)
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                SelectItem();
+                cmb.DroppedDown = false;
             }
             else if (e.KeyCode == Keys.Escape)
             {
                 e.Handled = true;
-                lst.Visible = false;
+                cmb.DroppedDown = false;
             }
-        };
-
-        lst.Click += (_, _) => { SelectItem(); txt.Focus(); };
-        lst.DoubleClick += (_, _) => { SelectItem(); txt.Focus(); };
-
-        txt.LostFocus += async (_, _) =>
-        {
-            await Task.Delay(200);
-            if (!lst.Focused)
-                lst.Visible = false;
         };
     }
 
@@ -779,25 +706,8 @@ public partial class Form1 : Form
         };
         pnlBatchTop.Controls.Add(lblBatchReceptor);
 
-        txtBatchReceptor = new TextBox
-        {
-            Location = new Point(120, 12),
-            Size = new Size(280, 28),
-            BackColor = Color.FromArgb(40, 40, 55),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9.5f),
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        lstBatchReceptor = new ListBox
-        {
-            Visible = false,
-            BackColor = Color.FromArgb(30, 30, 50),
-            ForeColor = Color.White,
-            Font = new Font("Consolas", 9f),
-            BorderStyle = BorderStyle.FixedSingle,
-            IntegralHeight = false
-        };
-        SetupBranchAutocomplete(txtBatchReceptor, lstBatchReceptor, new Point(120, 40));
+        txtBatchReceptor = CreateBranchComboBox(new Point(120, 12));
+        SetupBranchAutocomplete(txtBatchReceptor);
         pnlBatchTop.Controls.Add(txtBatchReceptor);
 
         btnBatchAnalyze = new Button
@@ -1345,7 +1255,7 @@ public partial class Form1 : Form
         if (!string.IsNullOrEmpty(_settings.LastRepoPath)
             && Directory.Exists(Path.Combine(_settings.LastRepoPath, ".git")))
         {
-            SetRepo(_settings.LastRepoPath);
+            SetRepo(_settings.LastRepoPath, autoFetch: true);
             return;
         }
 
@@ -1356,14 +1266,14 @@ public partial class Form1 : Form
         {
             if (Directory.Exists(Path.Combine(dir.FullName, ".git")))
             {
-                SetRepo(dir.FullName);
+                SetRepo(dir.FullName, autoFetch: true);
                 return;
             }
             dir = dir.Parent;
         }
     }
 
-    private void SetRepo(string path)
+    private void SetRepo(string path, bool autoFetch = false)
     {
         _git.RepoPath = path;
         lblRepo.Text = path;
@@ -1378,6 +1288,18 @@ public partial class Form1 : Form
         // Carregar info do branch atual se a aba Meu Branch estiver visivel
         if (tabs.SelectedTab == tabMyBranch)
             LoadMyBranchInfo();
+
+        if (autoFetch && !_isFetching)
+        {
+            StartFetchAnimation("Atualizando branches remotos");
+            Task.Run(() =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                _git.FetchOrigin();
+                sw.Stop();
+                Invoke(() => StopFetchAnimation(sw.Elapsed.TotalSeconds));
+            });
+        }
     }
 
     private void UpdateCurrentBranch()
