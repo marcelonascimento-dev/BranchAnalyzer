@@ -58,9 +58,9 @@ public class AppSettings
             var json = JsonSerializer.Serialize(this, JsonOptions);
             File.WriteAllText(SettingsFile, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // Falha silenciosa — settings não são críticas
+            Logger.Error("Failed to save settings", ex);
         }
     }
 
@@ -74,9 +74,9 @@ public class AppSettings
                 return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Arquivo corrompido — retorna default
+            Logger.Error("Failed to load settings (file may be corrupted)", ex);
         }
         return new();
     }
