@@ -13,4 +13,10 @@
     <Description>Ferramenta de análise de branches Git</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="src\**" />
+    <EmbeddedResource Remove="src\**" />
+    <None Remove="src\**" />
+  </ItemGroup>
+
 </Project>
