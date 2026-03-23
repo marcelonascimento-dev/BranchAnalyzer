@@ -1,24 +1,26 @@
 namespace BranchAnalyzer;
 
-public partial class Form1
+public partial class Form1 : Form
 {
     private void SetupBatchTab()
     {
-        // ── Tab: Verificacao em Lote ───────────────────────────────
         tabBatch = CreateTab("Lote (Multi-Branch)");
+
+        // -- Painel superior: Receptor + Analisar + Cancel + ETA ----------
         var pnlBatchTop = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = Color.FromArgb(30, 30, 42), Padding = new Padding(8, 8, 8, 8) };
 
         var tblBatchTop = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
+            ColumnCount = 4,
             RowCount = 1,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
         tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));  // Label
         tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));   // ComboBox
-        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));  // Botão
+        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));  // Botao Analisar
+        tblBatchTop.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));  // Botao Cancel
 
         var lblBatchReceptor = new Label
         {
@@ -43,7 +45,7 @@ public partial class Form1
             BackColor = Color.FromArgb(40, 100, 200),
             ForeColor = Color.White,
             Dock = DockStyle.Fill,
-            Margin = new Padding(0, 2, 0, 2),
+            Margin = new Padding(0, 2, 4, 2),
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
         };
@@ -51,8 +53,30 @@ public partial class Form1
         btnBatchAnalyze.Click += BtnBatchAnalyze_Click;
         tblBatchTop.Controls.Add(btnBatchAnalyze, 2, 0);
 
+        btnBatchCancel = new Button
+        {
+            Text = "CANCELAR",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(180, 50, 50),
+            ForeColor = Color.White,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 2),
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Visible = false
+        };
+        btnBatchCancel.FlatAppearance.BorderColor = Color.FromArgb(220, 60, 60);
+        btnBatchCancel.Click += (_, _) =>
+        {
+            _batchCts?.Cancel();
+            btnBatchCancel.Enabled = false;
+            btnBatchCancel.Text = "Cancelando...";
+        };
+        tblBatchTop.Controls.Add(btnBatchCancel, 3, 0);
+
         pnlBatchTop.Controls.Add(tblBatchTop);
 
+        // Export buttons row
         btnBatchExport = new Button
         {
             Text = "Exportar TXT",
@@ -110,10 +134,33 @@ public partial class Form1
         };
         pnlBatchTop.Controls.Add(pgBatch);
 
+        lblBatchEta = new Label
+        {
+            Text = "",
+            ForeColor = Color.FromArgb(180, 180, 200),
+            Font = new Font("Segoe UI", 8f),
+            AutoSize = true,
+            Location = new Point(875, 0),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Visible = false
+        };
+        pnlBatchTop.Controls.Add(lblBatchEta);
+
         tabBatch.Controls.Add(pnlBatchTop);
         pnlBatchTop.BringToFront();
 
-        // Painel esquerdo: filtros + lista de branches
+        // -- NEW: Batch Dashboard Cards -----------------------------------
+        pnlBatchDashboard = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 60,
+            BackColor = Color.FromArgb(28, 28, 38),
+            Padding = new Padding(8, 6, 8, 6),
+            Visible = false
+        };
+        // Cards will be created dynamically in UpdateBatchDashboard
+
+        // -- Painel esquerdo: filtros + lista de branches -----------------
         var pnlBatchLeft = new Panel
         {
             Dock = DockStyle.Fill,
@@ -121,7 +168,7 @@ public partial class Form1
             Padding = new Padding(8)
         };
 
-        // ── Secao de Filtros Avancados ──
+        // -- Secao de Filtros Avancados --
         var pnlFilters = new Panel
         {
             Dock = DockStyle.Top,
@@ -139,7 +186,6 @@ public partial class Form1
             Height = 22
         };
 
-        // TableLayoutPanel para organizar filtros de forma responsiva
         var tblFilters = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -151,12 +197,12 @@ public partial class Form1
         };
         tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
         tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Nome label + field
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Nome field
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Autor label + field
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Autor field
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); // Tipo + Periodo
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Botoes
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
 
         // Row 0: Label Nome
         var lblFilterName = new Label
@@ -213,7 +259,7 @@ public partial class Form1
         tblFilters.Controls.Add(cmbBatchFilterAuthor, 0, 3);
         tblFilters.SetColumnSpan(cmbBatchFilterAuthor, 2);
 
-        // Row 4: Tipo + Periodo (sub-table)
+        // Row 4: Tipo + Periodo
         var tblTipoPeriodo = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -252,7 +298,7 @@ public partial class Form1
 
         var lblFilterDays = new Label
         {
-            Text = "Período:",
+            Text = "Periodo:",
             ForeColor = Color.FromArgb(180, 180, 190),
             Font = new Font("Segoe UI", 8.5f),
             Dock = DockStyle.Fill,
@@ -320,7 +366,6 @@ public partial class Form1
         tblFilters.Controls.Add(pnlFilterButtons, 0, 5);
         tblFilters.SetColumnSpan(pnlFilterButtons, 2);
 
-        // Label com resultado do filtro (no rodapé do painel)
         var lblFilterResult = new Label
         {
             Name = "lblFilterResult",
@@ -332,16 +377,12 @@ public partial class Form1
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        // Montar painel de filtros (ordem WinForms: Fill por ultimo)
         pnlFilters.Controls.Add(tblFilters);
         pnlFilters.Controls.Add(lblFilterResult);
         pnlFilters.Controls.Add(lblFiltersTitle);
         lblFiltersTitle.BringToFront();
 
-        // Adicionar ao pnlBatchLeft na ordem correta para WinForms docking:
-        // Fill primeiro, depois Bottom, depois Top (ultimo adicionado com Top fica mais acima)
-
-        // ── Titulo da lista ──
+        // -- Titulo da lista --
         var lblBatchListTitle = new Label
         {
             Text = "Branches de feature (B):",
@@ -383,7 +424,7 @@ public partial class Form1
         btnBatchDeselectAll.Click += (_, _) => { for (int i = 0; i < clbBatchBranches.Items.Count; i++) clbBatchBranches.SetItemChecked(i, false); UpdateBatchCount(); };
         pnlBatchButtons.Controls.Add(btnBatchDeselectAll);
 
-        var btnBatchInvertSel = new Button
+        btnBatchInvertSel = new Button
         {
             Text = "Inverter",
             FlatStyle = FlatStyle.Flat,
@@ -420,12 +461,8 @@ public partial class Form1
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        // Ordem de adicao ao pnlBatchLeft (WinForms docking):
-        // 1) Fill primeiro (checkedlistbox preenche o meio)
         pnlBatchLeft.Controls.Add(clbBatchBranches);
-        // 2) Bottom (contador)
         pnlBatchLeft.Controls.Add(lblBatchCount);
-        // 3) Top na ordem inversa (ultimo adicionado = mais acima)
         pnlBatchLeft.Controls.Add(pnlBatchButtons);
         pnlBatchLeft.Controls.Add(lblBatchListTitle);
         pnlBatchLeft.Controls.Add(pnlFilters);
@@ -441,8 +478,9 @@ public partial class Form1
             new DataGridViewTextBoxColumn { Name = "UltimoAutor", HeaderText = "Ultimo Autor", Width = 160, DataPropertyName = "UltimoAutor" },
             new DataGridViewTextBoxColumn { Name = "UltimoCommit", HeaderText = "Ultimo Commit", Width = 250, DataPropertyName = "UltimoCommit" }
         );
+        dgvBatchResults.CellDoubleClick += DgvBatchResults_CellDoubleClick;
 
-        // SplitContainer para dividir esquerda (lista) e direita (grid) corretamente
+        // SplitContainer
         splitBatch = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -456,25 +494,23 @@ public partial class Form1
         splitBatch.Panel1.BackColor = Color.FromArgb(28, 28, 38);
         splitBatch.Panel2.BackColor = Color.FromArgb(24, 24, 32);
 
-        // Mover controles do pnlBatchLeft para Panel1 do split
         foreach (Control ctrl in pnlBatchLeft.Controls.Cast<Control>().ToArray())
         {
             pnlBatchLeft.Controls.Remove(ctrl);
             splitBatch.Panel1.Controls.Add(ctrl);
         }
 
-        // Grid no Panel2
+        // Right panel: dashboard on top, grid fills rest
         splitBatch.Panel2.Controls.Add(dgvBatchResults);
+        splitBatch.Panel2.Controls.Add(pnlBatchDashboard);
 
-        // Ordem IMPORTA no WinForms: adicionar Fill primeiro, depois Top
-        // O ultimo adicionado com Dock=Top reserva espaco antes do Fill
-        tabBatch.Controls.Add(splitBatch);   // Fill - adicionado primeiro
-        tabBatch.Controls.Add(pnlBatchTop);  // Top  - adicionado depois, reserva espaco acima
+        tabBatch.Controls.Add(splitBatch);
+        tabBatch.Controls.Add(pnlBatchTop);
+
+        // Mover aba Lote para segunda posicao (indice 1)
+        tabs.TabPages.Remove(tabBatch);
+        tabs.TabPages.Insert(1, tabBatch);
     }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  VERIFICACAO EM LOTE
-    // ══════════════════════════════════════════════════════════════════
 
     private void UpdateBatchCount()
     {
@@ -501,7 +537,6 @@ public partial class Form1
         };
         var cutoffDate = maxDays.HasValue ? DateTime.Now.AddDays(-maxDays.Value) : (DateTime?)null;
 
-        // Construir set de branches que passam no filtro de metadados
         var metadataFiltered = new HashSet<string>();
         foreach (var bm in _allBranchesMetadata)
         {
@@ -513,7 +548,6 @@ public partial class Form1
                 continue;
             metadataFiltered.Add(bm.ShortName);
             metadataFiltered.Add(bm.FullName);
-            // Adicionar variantes com origin/
             if (!bm.FullName.StartsWith("origin/"))
                 metadataFiltered.Add($"origin/{bm.FullName}");
         }
@@ -522,11 +556,8 @@ public partial class Form1
         int count = 0;
         foreach (var b in _batchBranches)
         {
-            // Filtro por nome (texto)
             if (!string.IsNullOrEmpty(nameFilter) && !b.ToLowerInvariant().Contains(nameFilter))
                 continue;
-
-            // Filtro por metadados (autor, prefixo, periodo)
             if ((authorFilter != null || prefixFilter != null || cutoffDate.HasValue)
                 && !metadataFiltered.Contains(b))
                 continue;
@@ -535,7 +566,6 @@ public partial class Form1
             count++;
         }
 
-        // Atualizar label de resultado do filtro
         var filterPanel = tabBatch.Controls.OfType<SplitContainer>().FirstOrDefault()?.Panel1;
         var lblResult = filterPanel?.Controls.OfType<Panel>()
             .SelectMany(p => p.Controls.OfType<Label>())
@@ -556,6 +586,44 @@ public partial class Form1
         UpdateBatchCount();
     }
 
+    private void LoadBatchBranches()
+    {
+        var batchSet = new HashSet<string>();
+        _batchBranches = new List<string>();
+        foreach (var b in _allBranches)
+        {
+            var shortName = b.StartsWith("origin/") ? b["origin/".Length..] : b;
+            if (batchSet.Add(shortName))
+                _batchBranches.Add(shortName);
+        }
+        _batchBranches.Sort();
+
+        clbBatchBranches.Items.Clear();
+        foreach (var b in _batchBranches)
+            clbBatchBranches.Items.Add(b);
+
+        var currentAuthor = cmbBatchFilterAuthor.SelectedItem?.ToString();
+        var currentPrefix = cmbBatchFilterPrefix.SelectedItem?.ToString();
+
+        cmbBatchFilterAuthor.Items.Clear();
+        cmbBatchFilterAuthor.Items.Add("(Todos os autores)");
+        var authors = _allBranchesMetadata.Select(b => b.Author).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a);
+        foreach (var a in authors)
+            cmbBatchFilterAuthor.Items.Add(a);
+        cmbBatchFilterAuthor.SelectedIndex = currentAuthor != null && cmbBatchFilterAuthor.Items.Contains(currentAuthor)
+            ? cmbBatchFilterAuthor.Items.IndexOf(currentAuthor) : 0;
+
+        cmbBatchFilterPrefix.Items.Clear();
+        cmbBatchFilterPrefix.Items.Add("(Todos)");
+        var prefixes = _allBranchesMetadata.Select(b => b.Prefix).Where(p => !string.IsNullOrEmpty(p)).Distinct().OrderBy(p => p);
+        foreach (var p in prefixes)
+            cmbBatchFilterPrefix.Items.Add(p);
+        cmbBatchFilterPrefix.SelectedIndex = currentPrefix != null && cmbBatchFilterPrefix.Items.Contains(currentPrefix)
+            ? cmbBatchFilterPrefix.Items.IndexOf(currentPrefix) : 0;
+
+        UpdateBatchCount();
+    }
+
     private void BtnBatchClearFilters_Click(object? sender, EventArgs e)
     {
         txtBatchFilter.Text = "";
@@ -565,7 +633,11 @@ public partial class Form1
         ApplyBatchFilters();
     }
 
-    private void BtnBatchAnalyze_Click(object? sender, EventArgs e)
+    // =====================================================================
+    //  BATCH ANALYZE - Parallel with SemaphoreSlim + CancellationToken
+    // =====================================================================
+
+    private async void BtnBatchAnalyze_Click(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(txtBatchReceptor.Text))
         {
@@ -590,113 +662,357 @@ public partial class Form1
             return;
         }
 
-        SetStatus($"Analisando {selected.Count} branches em lote...");
+        // Setup UI for running state
+        _batchCts = new CancellationTokenSource();
+        var ct = _batchCts.Token;
+
+        SetStatus($"Analisando {selected.Count} branches em lote (paralelo)...");
         UseWaitCursor = true; Application.DoEvents();
-        btnBatchAnalyze.Enabled = false;
+        btnBatchAnalyze.Visible = false;
+        btnBatchCancel.Visible = true;
+        btnBatchCancel.Enabled = true;
+        btnBatchCancel.Text = "CANCELAR";
+        pgBatch.Visible = true;
+        pgBatch.Minimum = 0;
+        pgBatch.Maximum = selected.Count;
+        pgBatch.Value = 0;
+        lblBatchEta.Visible = true;
+        lblBatchEta.Text = "ETA: calculando...";
 
-        Invoke(() =>
+        var results = new BatchMergeResult[selected.Count];
+        int processed = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        try
         {
-            pgBatch.Visible = true;
-            pgBatch.Minimum = 0;
-            pgBatch.Maximum = selected.Count;
-            pgBatch.Value = 0;
-        });
-
-        Task.Run(() =>
-        {
-            var results = new List<BatchMergeResult>();
-            int processed = 0;
-
-            foreach (var branchName in selected)
+            var semaphore = new SemaphoreSlim(4);
+            var tasks = selected.Select((branchName, index) => Task.Run(async () =>
             {
-                var resolved = _git.ResolveBranch(branchName);
-                if (resolved == null)
+                await semaphore.WaitAsync(ct);
+                try
                 {
-                    results.Add(new BatchMergeResult
+                    ct.ThrowIfCancellationRequested();
+
+                    var resolved = _git.ResolveBranch(branchName);
+                    if (resolved == null)
                     {
-                        BranchFeature = branchName,
-                        Status = "NAO ENCONTRADO"
+                        results[index] = new BatchMergeResult
+                        {
+                            BranchFeature = branchName,
+                            Status = "NAO ENCONTRADO"
+                        };
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var mergeStatus = _git.CheckMergeStatus(receptor, resolved);
+                            var conflicts = _git.DetectPotentialConflicts(receptor, resolved);
+                            var files = _git.GetChangedFiles(receptor, resolved);
+                            var branchInfo = _git.GetBranchInfo(receptor, resolved);
+
+                            results[index] = new BatchMergeResult
+                            {
+                                BranchFeature = branchName,
+                                Status = mergeStatus.IsMerged ? "MERGED" : "PENDENTE",
+                                CommitsPendentes = mergeStatus.PendingCommits,
+                                ConflitosArquivos = conflicts.Count,
+                                ArquivosAlterados = files.Count,
+                                UltimoAutor = branchInfo.LastCommitAuthor,
+                                UltimoCommit = branchInfo.LastCommitMessage.Length > 60
+                                    ? branchInfo.LastCommitMessage[..60] + "..."
+                                    : branchInfo.LastCommitMessage,
+                                IsMerged = mergeStatus.IsMerged
+                            };
+                        }
+                        catch
+                        {
+                            results[index] = new BatchMergeResult
+                            {
+                                BranchFeature = branchName,
+                                Status = "ERRO"
+                            };
+                        }
+                    }
+
+                    var current = Interlocked.Increment(ref processed);
+                    Invoke(() =>
+                    {
+                        pgBatch.Value = current;
+                        SetStatus($"Analisando {current}/{selected.Count}: {branchName}");
+
+                        // ETA calculation
+                        var elapsed = sw.Elapsed.TotalSeconds;
+                        if (current > 0 && current < selected.Count)
+                        {
+                            var avgPerItem = elapsed / current;
+                            var remaining = (selected.Count - current) * avgPerItem;
+                            var eta = TimeSpan.FromSeconds(remaining);
+                            lblBatchEta.Text = $"ETA: {eta:mm\\:ss}";
+                        }
+                        else if (current >= selected.Count)
+                        {
+                            lblBatchEta.Text = $"Concluido em {sw.Elapsed.TotalSeconds:F1}s";
+                        }
                     });
                 }
-                else
+                finally
                 {
-                    try
-                    {
-                        var mergeStatus = _git.CheckMergeStatus(receptor, resolved);
-                        var conflicts = _git.DetectPotentialConflicts(receptor, resolved);
-                        var files = _git.GetChangedFiles(receptor, resolved);
-                        var branchInfo = _git.GetBranchInfo(receptor, resolved);
-
-                        results.Add(new BatchMergeResult
-                        {
-                            BranchFeature = branchName,
-                            Status = mergeStatus.IsMerged ? "MERGED" : "PENDENTE",
-                            CommitsPendentes = mergeStatus.PendingCommits,
-                            ConflitosArquivos = conflicts.Count,
-                            ArquivosAlterados = files.Count,
-                            UltimoAutor = branchInfo.LastCommitAuthor,
-                            UltimoCommit = branchInfo.LastCommitMessage.Length > 60
-                                ? branchInfo.LastCommitMessage[..60] + "..."
-                                : branchInfo.LastCommitMessage,
-                            IsMerged = mergeStatus.IsMerged
-                        });
-                    }
-                    catch
-                    {
-                        results.Add(new BatchMergeResult
-                        {
-                            BranchFeature = branchName,
-                            Status = "ERRO"
-                        });
-                    }
+                    semaphore.Release();
                 }
+            }, ct)).ToArray();
 
-                processed++;
-                Invoke(() =>
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            // Fill remaining nulls with cancelled status
+            for (int i = 0; i < results.Length; i++)
+            {
+                results[i] ??= new BatchMergeResult
                 {
-                    pgBatch.Value = processed;
-                    SetStatus($"Analisando {processed}/{selected.Count}: {branchName}");
+                    BranchFeature = selected[i],
+                    Status = "CANCELADO"
+                };
+            }
+        }
+
+        sw.Stop();
+
+        // Update UI with results
+        var resultList = results.Where(r => r != null).ToList();
+        dgvBatchResults.DataSource = null;
+        dgvBatchResults.DataSource = resultList;
+
+        // Colorir linhas pelo status
+        foreach (DataGridViewRow row in dgvBatchResults.Rows)
+        {
+            if (row.DataBoundItem is BatchMergeResult r)
+            {
+                if (r.Status == "MERGED")
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 220, 80);
+                else if (r.Status == "PENDENTE")
+                    row.DefaultCellStyle.ForeColor = r.ConflitosArquivos > 0
+                        ? Color.FromArgb(255, 100, 80)
+                        : Color.FromArgb(255, 200, 80);
+                else if (r.Status == "CANCELADO")
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(160, 160, 180);
+                else
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(180, 80, 80);
+            }
+        }
+
+        UpdateBatchDashboard(resultList);
+
+        var merged = resultList.Count(r => r.IsMerged);
+        var pending = resultList.Count(r => r.Status == "PENDENTE");
+        var withConflicts = resultList.Count(r => r.ConflitosArquivos > 0);
+        var cancelled = resultList.Count(r => r.Status == "CANCELADO");
+
+        var statusMsg = $"Lote concluido em {sw.Elapsed.TotalSeconds:F1}s: {resultList.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos";
+        if (cancelled > 0) statusMsg += $" | {cancelled} cancelados";
+        SetStatus(statusMsg);
+
+        pgBatch.Visible = false;
+        lblBatchEta.Visible = false;
+        btnBatchAnalyze.Visible = true;
+        btnBatchCancel.Visible = false;
+        RestoreDefaultCursor();
+        _batchCts?.Dispose();
+        _batchCts = null;
+    }
+
+    // =====================================================================
+    //  BATCH DASHBOARD CARDS
+    // =====================================================================
+
+    private void UpdateBatchDashboard(List<BatchMergeResult> results)
+    {
+        pnlBatchDashboard.Controls.Clear();
+        pnlBatchDashboard.Visible = true;
+
+        var total = results.Count;
+        var merged = results.Count(r => r.IsMerged);
+        var pending = results.Count(r => r.Status == "PENDENTE");
+        var conflicts = results.Count(r => r.ConflitosArquivos > 0);
+
+        var cards = new[]
+        {
+            ("Total", total.ToString(), Color.FromArgb(120, 180, 255)),
+            ("Merged", merged.ToString(), Color.FromArgb(80, 220, 80)),
+            ("Pendentes", pending.ToString(), Color.FromArgb(255, 200, 80)),
+            ("Com Conflitos", conflicts.ToString(), Color.FromArgb(255, 100, 80))
+        };
+
+        int cardWidth = 150;
+        int cardHeight = 48;
+        int gap = 10;
+        int x = 8;
+
+        foreach (var (title, value, color) in cards)
+        {
+            var card = new Panel
+            {
+                Location = new Point(x, 6),
+                Size = new Size(cardWidth, cardHeight),
+                BackColor = Color.FromArgb(35, 35, 50)
+            };
+            card.Paint += (s, e) =>
+            {
+                using var pen = new Pen(color, 2);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+
+            var lblValue = new Label
+            {
+                Text = value,
+                ForeColor = color,
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Location = new Point(8, 2),
+                AutoSize = true
+            };
+            card.Controls.Add(lblValue);
+
+            var lblTitle = new Label
+            {
+                Text = title,
+                ForeColor = Color.FromArgb(160, 160, 180),
+                Font = new Font("Segoe UI", 8f),
+                Location = new Point(8, 30),
+                AutoSize = true
+            };
+            card.Controls.Add(lblTitle);
+
+            pnlBatchDashboard.Controls.Add(card);
+            x += cardWidth + gap;
+        }
+    }
+
+    // =====================================================================
+    //  DRILL-DOWN DIALOG
+    // =====================================================================
+
+    private void DgvBatchResults_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0) return;
+        if (dgvBatchResults.Rows[e.RowIndex].DataBoundItem is not BatchMergeResult result) return;
+
+        var receptor = _git.ResolveBranch(txtBatchReceptor.Text);
+        if (receptor == null) return;
+
+        var resolved = _git.ResolveBranch(result.BranchFeature);
+        if (resolved == null) return;
+
+        ShowDrillDownDialog(result, receptor, resolved);
+    }
+
+    private void ShowDrillDownDialog(BatchMergeResult result, string receptor, string resolved)
+    {
+        var dlg = new Form
+        {
+            Text = $"Detalhes: {result.BranchFeature}",
+            Size = new Size(900, 650),
+            MinimumSize = new Size(700, 500),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Color.FromArgb(24, 24, 32),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5f),
+            Icon = Icon
+        };
+
+        var tabsDrill = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 9.5f),
+            Padding = new Point(10, 5)
+        };
+
+        // -- Tab: Resumo --
+        var tabResumo = new TabPage("Resumo") { BackColor = Color.FromArgb(24, 24, 32), Padding = new Padding(10) };
+        var rtbResumo = CreateRichTextBox();
+        AppendRtb(rtbResumo, "\n  RESUMO DA ANALISE\n\n", Color.FromArgb(120, 180, 255), bold: true);
+        AppendRtb(rtbResumo, $"  Branch Feature: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.BranchFeature}\n", Color.FromArgb(255, 180, 80));
+        AppendRtb(rtbResumo, $"  Branch Receptor: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{receptor}\n\n", Color.FromArgb(100, 220, 100));
+        AppendRtb(rtbResumo, $"  Status: ", Color.FromArgb(140, 140, 160));
+        var statusColor = result.IsMerged ? Color.FromArgb(80, 220, 80) : Color.FromArgb(255, 200, 80);
+        AppendRtb(rtbResumo, $"{result.Status}\n", statusColor);
+        AppendRtb(rtbResumo, $"  Commits Pendentes: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.CommitsPendentes}\n", Color.FromArgb(220, 220, 230));
+        AppendRtb(rtbResumo, $"  Conflitos Potenciais: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.ConflitosArquivos}\n", result.ConflitosArquivos > 0 ? Color.FromArgb(255, 100, 80) : Color.FromArgb(80, 220, 80));
+        AppendRtb(rtbResumo, $"  Arquivos Alterados: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.ArquivosAlterados}\n", Color.FromArgb(220, 220, 230));
+        AppendRtb(rtbResumo, $"  Ultimo Autor: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.UltimoAutor}\n", Color.FromArgb(220, 220, 230));
+        AppendRtb(rtbResumo, $"  Ultimo Commit: ", Color.FromArgb(140, 140, 160));
+        AppendRtb(rtbResumo, $"{result.UltimoCommit}\n", Color.FromArgb(220, 220, 230));
+        tabResumo.Controls.Add(rtbResumo);
+        tabsDrill.TabPages.Add(tabResumo);
+
+        // -- Tab: Commits --
+        var tabCommits = new TabPage("Commits") { BackColor = Color.FromArgb(24, 24, 32), Padding = new Padding(4) };
+        var dgvDrillCommits = CreateDataGrid();
+        dgvDrillCommits.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "Hash", HeaderText = "Hash", Width = 100, DataPropertyName = "Hash" },
+            new DataGridViewTextBoxColumn { Name = "Author", HeaderText = "Autor", Width = 200, DataPropertyName = "Author" },
+            new DataGridViewTextBoxColumn { Name = "RelativeDate", HeaderText = "Quando", Width = 130, DataPropertyName = "RelativeDate" },
+            new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Mensagem", Width = 500, DataPropertyName = "Message" }
+        );
+        tabCommits.Controls.Add(dgvDrillCommits);
+        tabsDrill.TabPages.Add(tabCommits);
+
+        // -- Tab: Arquivos --
+        var tabArquivos = new TabPage("Arquivos") { BackColor = Color.FromArgb(24, 24, 32), Padding = new Padding(4) };
+        var dgvDrillFiles = CreateDataGrid();
+        dgvDrillFiles.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 100, DataPropertyName = "Status" },
+            new DataGridViewTextBoxColumn { Name = "FilePath", HeaderText = "Arquivo", Width = 700, DataPropertyName = "FilePath" }
+        );
+        tabArquivos.Controls.Add(dgvDrillFiles);
+        tabsDrill.TabPages.Add(tabArquivos);
+
+        // -- Tab: Conflitos --
+        var tabConflitos = new TabPage("Conflitos") { BackColor = Color.FromArgb(24, 24, 32), Padding = new Padding(4) };
+        var dgvDrillConflicts = CreateDataGrid();
+        dgvDrillConflicts.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "FilePath", HeaderText = "Arquivo com Conflito Potencial", Width = 800, DataPropertyName = "FilePath" }
+        );
+        tabConflitos.Controls.Add(dgvDrillConflicts);
+        tabsDrill.TabPages.Add(tabConflitos);
+
+        dlg.Controls.Add(tabsDrill);
+
+        // Load data async
+        Task.Run(() =>
+        {
+            try
+            {
+                var commits = _git.GetPendingCommits(receptor, resolved);
+                var files = _git.GetChangedFiles(receptor, resolved);
+                var conflicts = _git.DetectPotentialConflicts(receptor, resolved);
+
+                dlg.Invoke(() =>
+                {
+                    dgvDrillCommits.DataSource = commits;
+                    dgvDrillFiles.DataSource = files;
+                    dgvDrillConflicts.DataSource = conflicts.Select(f => new { FilePath = f }).ToList();
                 });
             }
-
-            Invoke(() =>
+            catch (Exception ex)
             {
-                dgvBatchResults.DataSource = null;
-                dgvBatchResults.DataSource = results;
-
-                // Colorir linhas pelo status
-                foreach (DataGridViewRow row in dgvBatchResults.Rows)
-                {
-                    if (row.DataBoundItem is BatchMergeResult r)
-                    {
-                        if (r.Status == "MERGED")
-                        {
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 220, 80);
-                        }
-                        else if (r.Status == "PENDENTE")
-                        {
-                            row.DefaultCellStyle.ForeColor = r.ConflitosArquivos > 0
-                                ? Color.FromArgb(255, 100, 80)
-                                : Color.FromArgb(255, 200, 80);
-                        }
-                        else
-                        {
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(180, 80, 80);
-                        }
-                    }
-                }
-
-                var merged = results.Count(r => r.IsMerged);
-                var pending = results.Count(r => r.Status == "PENDENTE");
-                var withConflicts = results.Count(r => r.ConflitosArquivos > 0);
-
-                SetStatus($"Lote concluido: {results.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos potenciais");
-                pgBatch.Visible = false;
-                btnBatchAnalyze.Enabled = true;
-                RestoreDefaultCursor();
-            });
+                try { dlg.Invoke(() => MessageBox.Show($"Erro ao carregar detalhes: {ex.Message}", "Erro")); }
+                catch { /* dialog may be closed */ }
+            }
         });
+
+        dlg.ShowDialog(this);
     }
+
+    // =====================================================================
+    //  BATCH EXPORT TXT
+    // =====================================================================
 
     private void BtnBatchExport_Click(object? sender, EventArgs e)
     {

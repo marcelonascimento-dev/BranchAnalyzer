@@ -1,8 +1,6 @@
-using System.Diagnostics;
-
 namespace BranchAnalyzer;
 
-public partial class Form1
+public partial class Form1 : Form
 {
     private void RestoreWindowState()
     {
@@ -12,7 +10,6 @@ public partial class Form1
                 _settings.WindowX, _settings.WindowY,
                 _settings.WindowWidth, _settings.WindowHeight);
 
-            // Garantir que a janela está visível em algum monitor
             if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(bounds)))
             {
                 StartPosition = FormStartPosition.Manual;
@@ -33,7 +30,6 @@ public partial class Form1
         if (WindowState == FormWindowState.Maximized)
         {
             _settings.WindowMaximized = true;
-            // Manter as coordenadas do estado normal (antes de maximizar)
             _settings.WindowWidth = RestoreBounds.Width;
             _settings.WindowHeight = RestoreBounds.Height;
             _settings.WindowX = RestoreBounds.X;
@@ -50,7 +46,6 @@ public partial class Form1
 
         _settings.LastSelectedTab = tabs.SelectedIndex;
 
-        // Salvar branches usados por último
         if (!string.IsNullOrEmpty(txtBranchA.Text))
             _settings.LastBranchA = txtBranchA.Text;
         if (!string.IsNullOrEmpty(txtBranchB.Text))
@@ -63,14 +58,13 @@ public partial class Form1
 
     private void TryAutoDetectRepo()
     {
-        // 1) Restaurar último repositório salvo nas settings
+        // 1) Restaurar ultimo repositorio salvo nas settings
         if (!string.IsNullOrEmpty(_settings.LastRepoPath)
             && Directory.Exists(Path.Combine(_settings.LastRepoPath, ".git")))
         {
             SetRepo(_settings.LastRepoPath, autoFetch: true);
-            // Mostrar URL se foi clonado via URL
             if (!string.IsNullOrEmpty(_settings.LastRepoUrl))
-                lblRepo.Text = $"{_settings.LastRepoUrl}  →  {_settings.LastRepoPath}";
+                lblRepo.Text = $"{_settings.LastRepoUrl}  ->  {_settings.LastRepoPath}";
             return;
         }
 
@@ -82,12 +76,12 @@ public partial class Form1
             if (Directory.Exists(Path.Combine(cachedPath, ".git")))
             {
                 SetRepo(cachedPath, autoFetch: true);
-                lblRepo.Text = $"{_settings.LastRepoUrl}  →  {cachedPath}";
+                lblRepo.Text = $"{_settings.LastRepoUrl}  ->  {cachedPath}";
                 return;
             }
         }
 
-        // 3) Subir a árvore de diretórios a partir do exe
+        // 3) Subir a arvore de diretorios a partir do exe
         var currentDir = AppDomain.CurrentDomain.BaseDirectory;
         var dir = new DirectoryInfo(currentDir);
         while (dir != null)
@@ -113,7 +107,6 @@ public partial class Form1
         _settings.AddRecentRepo(path);
         _settings.Save();
 
-        // Carregar info do branch atual se a aba Meu Branch estiver visivel
         if (tabs.SelectedTab == tabMyBranch)
             LoadMyBranchInfo();
 
@@ -122,7 +115,7 @@ public partial class Form1
             StartFetchAnimation("Atualizando branches remotos");
             Task.Run(() =>
             {
-                var sw = Stopwatch.StartNew();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 _git.FetchOrigin();
                 sw.Stop();
                 Invoke(() => StopFetchAnimation(sw.Elapsed.TotalSeconds));
@@ -130,84 +123,14 @@ public partial class Form1
         }
     }
 
-    private void UpdateCurrentBranch()
+    private void BtnSetRepo_Click(object? sender, EventArgs e)
     {
-        try
+        var cachePath = string.IsNullOrWhiteSpace(_settings.CloneCachePath) ? null : _settings.CloneCachePath;
+        using var dlg = new RepoSelectDialog(_settings.RecentRepoPaths, cachePath);
+        if (dlg.ShowDialog() == DialogResult.OK && !string.IsNullOrEmpty(dlg.SelectedRepoPath))
         {
-            var branch = _git.GetCurrentBranch();
-            lblCurrentBranch.Text = branch;
+            _settings.LastRepoUrl = dlg.SelectedRepoUrl;
+            SetRepo(dlg.SelectedRepoPath);
         }
-        catch
-        {
-            lblCurrentBranch.Text = "(desconhecido)";
-        }
-    }
-
-    private void LoadBranches()
-    {
-        _allBranches = _git.GetAllBranches();
-        _localBranches = _git.GetLocalBranches();
-        _prioritizedBranches = _git.GetBranchesPrioritized();
-        _allBranchesMetadata = _git.GetBranchesMetadata();
-
-        // Lista unica para o lote: prefere origin/, remove duplicatas
-        var batchSet = new HashSet<string>();
-        _batchBranches = new List<string>();
-        foreach (var b in _allBranches)
-        {
-            var shortName = b.StartsWith("origin/") ? b["origin/".Length..] : b;
-            if (batchSet.Add(shortName))
-                _batchBranches.Add(shortName);
-        }
-        _batchBranches.Sort();
-
-        clbBatchBranches.Items.Clear();
-        foreach (var b in _batchBranches)
-        {
-            clbBatchBranches.Items.Add(b);
-        }
-
-        // Popular filtros de autor e prefixo
-        var currentAuthor = cmbBatchFilterAuthor.SelectedItem?.ToString();
-        var currentPrefix = cmbBatchFilterPrefix.SelectedItem?.ToString();
-
-        cmbBatchFilterAuthor.Items.Clear();
-        cmbBatchFilterAuthor.Items.Add("(Todos os autores)");
-        var authors = _allBranchesMetadata.Select(b => b.Author).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a);
-        foreach (var a in authors)
-            cmbBatchFilterAuthor.Items.Add(a);
-        cmbBatchFilterAuthor.SelectedIndex = currentAuthor != null && cmbBatchFilterAuthor.Items.Contains(currentAuthor)
-            ? cmbBatchFilterAuthor.Items.IndexOf(currentAuthor) : 0;
-
-        cmbBatchFilterPrefix.Items.Clear();
-        cmbBatchFilterPrefix.Items.Add("(Todos)");
-        var prefixes = _allBranchesMetadata.Select(b => b.Prefix).Where(p => !string.IsNullOrEmpty(p)).Distinct().OrderBy(p => p);
-        foreach (var p in prefixes)
-            cmbBatchFilterPrefix.Items.Add(p);
-        cmbBatchFilterPrefix.SelectedIndex = currentPrefix != null && cmbBatchFilterPrefix.Items.Contains(currentPrefix)
-            ? cmbBatchFilterPrefix.Items.IndexOf(currentPrefix) : 0;
-
-        UpdateBatchCount();
-    }
-
-    private void SetStatus(string text)
-    {
-        lblStatus.Text = text;
-        lblStatus.Refresh();
-    }
-
-    private void RestoreDefaultCursor()
-    {
-        UseWaitCursor = false;
-        Cursor = Cursors.Default;
-        // Forçar reset em todos os DataGridViews (bug do WinForms)
-        foreach (var dgv in new[] { dgvMergeCommits, _dgvMyCommits, _dgvLocalChanges, dgvBatchResults })
-        {
-            if (dgv != null)
-            {
-                dgv.Cursor = Cursors.Default;
-            }
-        }
-        Application.DoEvents();
     }
 }

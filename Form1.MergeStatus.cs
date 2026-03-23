@@ -1,10 +1,9 @@
 namespace BranchAnalyzer;
 
-public partial class Form1
+public partial class Form1 : Form
 {
-    private void SetupMergeStatusTab()
+    private void SetupMergeTab()
     {
-        // ── Tab: Status de Merge ────────────────────────────────────
         tabMergeStatus = CreateTab("Status Merge");
 
         // Painel superior com resumo
@@ -96,6 +95,47 @@ public partial class Form1
         btnExportJson.Click += (_, _) => ExportGrid(dgvMergeCommits, "json");
         pnlMergeCommitsBar.Controls.Add(btnExportJson);
 
+        // -- NEW: Commit Search Bar --
+        var pnlCommitSearch = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 32,
+            BackColor = Color.FromArgb(28, 28, 38),
+            Padding = new Padding(8, 3, 8, 3)
+        };
+
+        var lblSearchIcon = new Label
+        {
+            Text = "Buscar:",
+            ForeColor = Color.FromArgb(140, 140, 160),
+            Font = new Font("Segoe UI", 8.5f),
+            AutoSize = true,
+            Location = new Point(10, 7)
+        };
+        pnlCommitSearch.Controls.Add(lblSearchIcon);
+
+        txtCommitSearch = new TextBox
+        {
+            Location = new Point(60, 4),
+            Size = new Size(350, 24),
+            BackColor = Color.FromArgb(40, 40, 55),
+            ForeColor = Color.White,
+            Font = new Font("Consolas", 9.5f),
+            PlaceholderText = "Filtrar por mensagem, autor ou hash..."
+        };
+        txtCommitSearch.TextChanged += (_, _) => FilterMergeCommits();
+        pnlCommitSearch.Controls.Add(txtCommitSearch);
+
+        lblCommitSearchCount = new Label
+        {
+            Text = "",
+            ForeColor = Color.FromArgb(120, 180, 255),
+            Font = new Font("Segoe UI", 8.5f),
+            AutoSize = true,
+            Location = new Point(420, 7)
+        };
+        pnlCommitSearch.Controls.Add(lblCommitSearchCount);
+
         // Grid com commits pendentes
         dgvMergeCommits = CreateDataGrid();
         dgvMergeCommits.Columns.AddRange(
@@ -107,8 +147,33 @@ public partial class Form1
 
         // Ordem: Fill primeiro, depois Top
         tabMergeStatus.Controls.Add(dgvMergeCommits);       // Fill
-        tabMergeStatus.Controls.Add(pnlMergeCommitsBar);    // Top (barra com export)
-        tabMergeStatus.Controls.Add(pnlMergeSummary);        // Top (topo)
+        tabMergeStatus.Controls.Add(pnlCommitSearch);        // Top (search bar)
+        tabMergeStatus.Controls.Add(pnlMergeCommitsBar);     // Top (barra com export)
+        tabMergeStatus.Controls.Add(pnlMergeSummary);         // Top (topo)
+    }
+
+    private void FilterMergeCommits()
+    {
+        var filter = txtCommitSearch.Text.Trim();
+        if (string.IsNullOrEmpty(filter))
+        {
+            dgvMergeCommits.DataSource = null;
+            dgvMergeCommits.DataSource = _allMergeCommits;
+            lblCommitSearchCount.Text = _allMergeCommits.Count > 0
+                ? $"{_allMergeCommits.Count} commit(s)"
+                : "";
+            return;
+        }
+
+        var filtered = _allMergeCommits.Where(c =>
+            c.Message.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            c.Author.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            c.Hash.Contains(filter, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+
+        dgvMergeCommits.DataSource = null;
+        dgvMergeCommits.DataSource = filtered;
+        lblCommitSearchCount.Text = $"{filtered.Count} de {_allMergeCommits.Count} commit(s)";
     }
 
     private void BtnAnalyze_Click(object? sender, EventArgs e)
@@ -156,18 +221,105 @@ public partial class Form1
 
         if (commits != null)
         {
+            _allMergeCommits = commits;
+            txtCommitSearch.Text = "";
             dgvMergeCommits.DataSource = null;
             dgvMergeCommits.DataSource = commits;
+            lblCommitSearchCount.Text = commits.Count > 0 ? $"{commits.Count} commit(s)" : "";
         }
     }
 
-    private void AppendRtb(RichTextBox rtb, string text, Color color, bool bold = false)
+    private void ExportGrid(DataGridView dgv, string format)
     {
-        rtb.SelectionStart = rtb.TextLength;
-        rtb.SelectionLength = 0;
-        rtb.SelectionColor = color;
-        if (bold) rtb.SelectionFont = new Font(rtb.Font, FontStyle.Bold);
-        rtb.AppendText(text);
-        if (bold) rtb.SelectionFont = rtb.Font;
+        if (dgv.Rows.Count == 0)
+        {
+            MessageBox.Show("Nao ha dados para exportar.", "Atencao", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var branchA = txtBranchA.Text;
+        var branchB = txtBranchB.Text;
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmm");
+
+        if (format == "csv")
+        {
+            using var dlg = new SaveFileDialog
+            {
+                Filter = "CSV (separado por ;)|*.csv|CSV (separado por ,)|*.csv",
+                Title = "Exportar para CSV",
+                FileName = $"commits_{branchB.Replace("/", "_")}_{timestamp}.csv"
+            };
+            if (dlg.ShowDialog() != DialogResult.OK) return;
+
+            var sep = dlg.FilterIndex == 1 ? ";" : ",";
+            var sb = new System.Text.StringBuilder();
+
+            var headers = new List<string>();
+            foreach (DataGridViewColumn col in dgv.Columns)
+                if (col.Visible) headers.Add(col.HeaderText);
+            sb.AppendLine(string.Join(sep, headers));
+
+            foreach (DataGridViewRow row in dgv.Rows)
+            {
+                var values = new List<string>();
+                foreach (DataGridViewColumn col in dgv.Columns)
+                {
+                    if (!col.Visible) continue;
+                    var val = row.Cells[col.Index].Value?.ToString() ?? "";
+                    if (val.Contains(sep) || val.Contains('"') || val.Contains('\n'))
+                        val = $"\"{val.Replace("\"", "\"\"")}\"";
+                    values.Add(val);
+                }
+                sb.AppendLine(string.Join(sep, values));
+            }
+
+            File.WriteAllText(dlg.FileName, sb.ToString(), System.Text.Encoding.UTF8);
+            SetStatus($"CSV exportado: {dlg.FileName}");
+            MessageBox.Show($"Exportado com sucesso!\n{dlg.FileName}\n\n{dgv.Rows.Count} registro(s)", "Sucesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        else if (format == "json")
+        {
+            using var dlg = new SaveFileDialog
+            {
+                Filter = "JSON|*.json",
+                Title = "Exportar para JSON",
+                FileName = $"commits_{branchB.Replace("/", "_")}_{timestamp}.json"
+            };
+            if (dlg.ShowDialog() != DialogResult.OK) return;
+
+            var columns = new List<DataGridViewColumn>();
+            foreach (DataGridViewColumn col in dgv.Columns)
+                if (col.Visible) columns.Add(col);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("{");
+            sb.AppendLine($"  \"branchReceptor\": \"{EscapeJson(branchA)}\",");
+            sb.AppendLine($"  \"branchFeature\": \"{EscapeJson(branchB)}\",");
+            sb.AppendLine($"  \"exportDate\": \"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\",");
+            sb.AppendLine($"  \"totalRegistros\": {dgv.Rows.Count},");
+            sb.AppendLine("  \"dados\": [");
+
+            for (int i = 0; i < dgv.Rows.Count; i++)
+            {
+                var row = dgv.Rows[i];
+                sb.Append("    {");
+                var fields = new List<string>();
+                foreach (var col in columns)
+                {
+                    var val = row.Cells[col.Index].Value?.ToString() ?? "";
+                    fields.Add($"\"{col.HeaderText}\": \"{EscapeJson(val)}\"");
+                }
+                sb.Append(string.Join(", ", fields));
+                sb.Append(i < dgv.Rows.Count - 1 ? "}," : "}");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("  ]");
+            sb.AppendLine("}");
+
+            File.WriteAllText(dlg.FileName, sb.ToString(), System.Text.Encoding.UTF8);
+            SetStatus($"JSON exportado: {dlg.FileName}");
+            MessageBox.Show($"Exportado com sucesso!\n{dlg.FileName}\n\n{dgv.Rows.Count} registro(s)", "Sucesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 }

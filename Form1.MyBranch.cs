@@ -1,13 +1,12 @@
 namespace BranchAnalyzer;
 
-public partial class Form1
+public partial class Form1 : Form
 {
     private void SetupMyBranchTab()
     {
-        // ── Tab: Meu Branch (informacoes do branch atual) ──────────
         tabMyBranch = CreateTab("Meu Branch");
 
-        // Barra superior com botão Atualizar
+        // Barra superior com botao Atualizar
         var pnlMyBranchTop = new Panel
         {
             Dock = DockStyle.Top,
@@ -49,12 +48,7 @@ public partial class Form1
             new DataGridViewTextBoxColumn { Name = "FilePath", HeaderText = "Arquivo", Width = 500, DataPropertyName = "FilePath" }
         );
 
-        // ── Layout: 3 seções verticais ──
-        // Topo: Info resumo (RichTextBox)
-        // Meio: Alterações locais (grid)
-        // Baixo: Commits recentes (grid)
-
-        // SplitContainer principal: [info + local changes] | [commits]
+        // -- Layout: 3 secoes verticais --
         var splitMyBranch = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -66,7 +60,6 @@ public partial class Form1
             Panel2MinSize = 150
         };
 
-        // Panel1: Info + Local Changes (split vertical)
         var splitInfoAndChanges = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -78,7 +71,7 @@ public partial class Form1
             Panel2MinSize = 80
         };
 
-        // Seção: Resumo do branch
+        // Secao: Resumo do branch
         var pnlInfoSection = new Panel
         {
             Dock = DockStyle.Fill,
@@ -86,7 +79,7 @@ public partial class Form1
         };
         var lblInfoTitle = new Label
         {
-            Text = "\u2139  Informações do Branch",
+            Text = "\u2139  Informacoes do Branch",
             ForeColor = Color.FromArgb(120, 180, 255),
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             Dock = DockStyle.Top,
@@ -99,7 +92,7 @@ public partial class Form1
         splitInfoAndChanges.Panel1.Controls.Add(pnlInfoSection);
         splitInfoAndChanges.Panel1.BackColor = Color.FromArgb(24, 24, 32);
 
-        // Seção: Alterações locais
+        // Secao: Alteracoes locais
         var pnlLocalSection = new Panel
         {
             Dock = DockStyle.Fill,
@@ -107,7 +100,7 @@ public partial class Form1
         };
         var lblLocalChanges = new Label
         {
-            Text = "\u270E  Alterações locais (não commitadas)",
+            Text = "\u270E  Alteracoes locais (nao commitadas)",
             ForeColor = Color.FromArgb(255, 180, 60),
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             Dock = DockStyle.Top,
@@ -123,7 +116,7 @@ public partial class Form1
         splitMyBranch.Panel1.Controls.Add(splitInfoAndChanges);
         splitMyBranch.Panel1.BackColor = Color.FromArgb(24, 24, 32);
 
-        // Seção: Commits recentes
+        // Secao: Commits recentes
         var pnlCommitsSection = new Panel
         {
             Dock = DockStyle.Fill,
@@ -131,7 +124,7 @@ public partial class Form1
         };
         var lblRecentCommits = new Label
         {
-            Text = "\u23F0  Últimos commits no branch atual",
+            Text = "\u23F0  Ultimos commits no branch atual",
             ForeColor = Color.FromArgb(120, 180, 255),
             Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             Dock = DockStyle.Top,
@@ -148,10 +141,6 @@ public partial class Form1
         tabMyBranch.Controls.Add(pnlMyBranchTop);
         pnlMyBranchTop.BringToFront();
     }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  MEU BRANCH
-    // ══════════════════════════════════════════════════════════════════
 
     private void LoadMyBranchInfo()
     {
@@ -173,14 +162,12 @@ public partial class Form1
 
                 Invoke(() =>
                 {
-                    // Atualizar RichTextBox com info resumida
                     _rtbMyBranch.Clear();
 
                     AppendRtb(_rtbMyBranch, "\n  BRANCH ATUAL\n", Color.FromArgb(120, 180, 255), bold: true);
                     AppendRtb(_rtbMyBranch, $"  Nome: ", Color.FromArgb(140, 140, 160));
                     AppendRtb(_rtbMyBranch, $"{branch}\n\n", Color.FromArgb(80, 220, 120));
 
-                    // Status vs remote
                     AppendRtb(_rtbMyBranch, "  STATUS vs REMOTE\n", Color.FromArgb(120, 180, 255), bold: true);
                     if (ahead > 0)
                     {
@@ -197,14 +184,12 @@ public partial class Form1
                         AppendRtb(_rtbMyBranch, $"  Sincronizado com o remote\n", Color.FromArgb(80, 220, 80));
                     }
 
-                    // Alteracoes locais
                     AppendRtb(_rtbMyBranch, $"\n  ALTERACOES LOCAIS\n", Color.FromArgb(120, 180, 255), bold: true);
                     if (localChanges.Count == 0)
                         AppendRtb(_rtbMyBranch, "  Nenhuma alteracao local pendente\n", Color.FromArgb(80, 220, 80));
                     else
                         AppendRtb(_rtbMyBranch, $"  {localChanges.Count} arquivo(s) modificado(s)\n", Color.FromArgb(255, 180, 60));
 
-                    // Stashes
                     AppendRtb(_rtbMyBranch, $"\n  STASHES\n", Color.FromArgb(120, 180, 255), bold: true);
                     if (stashes.Count == 0)
                         AppendRtb(_rtbMyBranch, "  Nenhum stash salvo\n", Color.FromArgb(140, 140, 160));
@@ -215,7 +200,6 @@ public partial class Form1
                             AppendRtb(_rtbMyBranch, $"    {s}\n", Color.FromArgb(180, 180, 200));
                     }
 
-                    // Branches locais
                     AppendRtb(_rtbMyBranch, $"\n  BRANCHES LOCAIS ({localBranches.Count})\n", Color.FromArgb(120, 180, 255), bold: true);
                     foreach (var lb in localBranches.Take(10))
                     {
@@ -230,7 +214,6 @@ public partial class Form1
                     if (localBranches.Count > 10)
                         AppendRtb(_rtbMyBranch, $"   ... e mais {localBranches.Count - 10} branches\n", Color.FromArgb(100, 100, 130));
 
-                    // Grids
                     _dgvMyCommits.DataSource = null;
                     _dgvMyCommits.DataSource = recentCommits;
 

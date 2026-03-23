@@ -1,18 +1,28 @@
-using System.Diagnostics;
-
 namespace BranchAnalyzer;
 
-public partial class Form1
+public partial class Form1 : Form
 {
-    private void BtnSetRepo_Click(object? sender, EventArgs e)
+    private void UpdateCurrentBranch()
     {
-        var cachePath = string.IsNullOrWhiteSpace(_settings.CloneCachePath) ? null : _settings.CloneCachePath;
-        using var dlg = new RepoSelectDialog(_settings.RecentRepoPaths, cachePath);
-        if (dlg.ShowDialog() == DialogResult.OK && !string.IsNullOrEmpty(dlg.SelectedRepoPath))
+        try
         {
-            _settings.LastRepoUrl = dlg.SelectedRepoUrl;
-            SetRepo(dlg.SelectedRepoPath);
+            var branch = _git.GetCurrentBranch();
+            lblCurrentBranch.Text = branch;
         }
+        catch
+        {
+            lblCurrentBranch.Text = "(desconhecido)";
+        }
+    }
+
+    private void LoadBranches()
+    {
+        _allBranches = _git.GetAllBranches();
+        _localBranches = _git.GetLocalBranches();
+        _prioritizedBranches = _git.GetBranchesPrioritized();
+        _allBranchesMetadata = _git.GetBranchesMetadata();
+
+        LoadBatchBranches();
     }
 
     private void StartFetchAnimation(string label)
@@ -51,39 +61,52 @@ public partial class Form1
         btnFetch.BackColor = Color.FromArgb(50, 50, 70);
     }
 
-    private async void BtnFetch_Click(object? sender, EventArgs e)
+    private void BtnFetch_Click(object? sender, EventArgs e)
     {
         if (_isFetching) return;
         StartFetchAnimation("Fetch Origin");
 
-        var sw = Stopwatch.StartNew();
-        try
+        Task.Run(() =>
         {
-            await _git.FetchOriginAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("FetchOriginAsync failed", ex);
-        }
-        sw.Stop();
-        StopFetchAnimation(sw.Elapsed.TotalSeconds);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            _git.FetchOrigin();
+            sw.Stop();
+            Invoke(() => StopFetchAnimation(sw.Elapsed.TotalSeconds));
+        });
     }
 
-    private async void BtnFetchFull_Click()
+    private void BtnFetchFull_Click()
     {
         if (_isFetching) return;
         StartFetchAnimation("Fetch + Prune");
 
-        var sw = Stopwatch.StartNew();
-        try
+        Task.Run(() =>
         {
-            await _git.FetchPruneAsync();
-        }
-        catch (Exception ex)
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            _git.FetchPrune();
+            sw.Stop();
+            Invoke(() => StopFetchAnimation(sw.Elapsed.TotalSeconds));
+        });
+    }
+
+    private void Tab_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (tabs.SelectedTab == tabBatch && splitBatch != null)
         {
-            Logger.Error("FetchPruneAsync failed", ex);
+            BeginInvoke(() =>
+            {
+                try { splitBatch.SplitterDistance = 350; } catch { }
+            });
         }
-        sw.Stop();
-        StopFetchAnimation(sw.Elapsed.TotalSeconds);
+        else if (tabs.SelectedTab == tabMyBranch)
+        {
+            LoadMyBranchInfo();
+        }
+        else if (tabs.SelectedTab == tabBranchHealth)
+        {
+            // Auto-load on first visit if we have a repo
+            if (dgvBranchHealth.Rows.Count == 0 && !string.IsNullOrEmpty(_git.RepoPath))
+                LoadBranchHealth();
+        }
     }
 }
