@@ -30,7 +30,7 @@ public partial class Form1 : Form
         _isFetching = true;
         btnFetch.Enabled = false;
         btnFetch.BackColor = Color.FromArgb(60, 60, 30);
-        UseWaitCursor = true; Application.DoEvents();
+        SetBusy(true);
 
         _fetchAnimDots = 0;
         _fetchAnimTimer = new System.Windows.Forms.Timer { Interval = 350 };

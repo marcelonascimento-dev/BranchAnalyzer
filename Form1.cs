@@ -75,10 +75,22 @@ public partial class Form1 : Form
     // NEW: Batch Dashboard
     private Panel pnlBatchDashboard = null!;
 
+    // NEW: Batch Commit Search
+    private TextBox _txtBatchCommitSearch = null!;
+
     // NEW: Tab Branch Health
     private TabPage tabBranchHealth = null!;
     private DataGridView dgvBranchHealth = null!;
     private Label lblHealthSummary = null!;
+
+    // Search Branch (declarados em Form1.SearchBranch.cs)
+    private TabPage tabSearchBranch = null!;
+    private TextBox txtSearchTerm = null!;
+    private Button btnSearch = null!;
+    private DataGridView dgvSearchResults = null!;
+    private Label lblSearchStatus = null!;
+    private Label lblSearchCount = null!;
+    private CancellationTokenSource? _searchCts;
 
     // Branch lists (shared across all partials)
     private List<string> _allBranches = new();
@@ -340,6 +352,11 @@ public partial class Form1 : Form
         SetupBatchTab();
         SetupMyBranchTab();
         SetupBranchHealthTab();
+        SetupSearchBranchTab();
+
+        // Mover aba Pesquisar Branch para terceira posicao (indice 2)
+        tabs.TabPages.Remove(tabSearchBranch);
+        tabs.TabPages.Insert(2, tabSearchBranch);
 
         // Tab change handler
         tabs.SelectedIndexChanged += Tab_SelectedIndexChanged;
@@ -650,16 +667,14 @@ public partial class Form1 : Form
         lblStatus.Refresh();
     }
 
+    private void SetBusy(bool busy)
+    {
+        Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+    }
+
     private void RestoreDefaultCursor()
     {
-        UseWaitCursor = false;
         Cursor = Cursors.Default;
-        foreach (var dgv in new[] { dgvMergeCommits, _dgvMyCommits, _dgvLocalChanges, dgvBatchResults, dgvBranchHealth })
-        {
-            if (dgv != null)
-                dgv.Cursor = Cursors.Default;
-        }
-        Application.DoEvents();
     }
 
     private void AppendRtb(RichTextBox rtb, string text, Color color, bool bold = false)

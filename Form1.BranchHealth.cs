@@ -69,7 +69,7 @@ public partial class Form1 : Form
         if (string.IsNullOrEmpty(_git.RepoPath)) return;
 
         SetStatus("Carregando saude dos branches...");
-        UseWaitCursor = true; Application.DoEvents();
+        SetBusy(true);
 
         Task.Run(() =>
         {

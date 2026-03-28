@@ -147,7 +147,7 @@ public partial class Form1 : Form
         if (string.IsNullOrEmpty(_git.RepoPath)) return;
 
         SetStatus("Carregando informacoes do branch atual...");
-        UseWaitCursor = true; Application.DoEvents();
+        SetBusy(true);
 
         Task.Run(() =>
         {

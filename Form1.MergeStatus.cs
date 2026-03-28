@@ -182,7 +182,7 @@ public partial class Form1 : Form
         if (a == null || b == null) return;
 
         SetStatus("Analisando branches...");
-        UseWaitCursor = true; Application.DoEvents();
+        SetBusy(true);
 
         Task.Run(() =>
         {
