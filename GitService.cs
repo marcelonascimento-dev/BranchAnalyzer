@@ -327,6 +327,98 @@ public class GitService
         return ParseCommits(log);
     }
 
+    /// <summary>
+    /// Busca branches por nome e/ou por mensagem de commit.
+    /// Retorna branches cujo nome contem a keyword OU que possuem commits com a keyword.
+    /// </summary>
+    public HashSet<string> FindBranches(string keyword, List<string> allBranches)
+    {
+        var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 1) Match por nome do branch (case-insensitive, contains)
+        foreach (var b in allBranches)
+        {
+            if (b.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                matched.Add(b);
+        }
+
+        // 2) Match por mensagem/hash de commit via git log --source (single call)
+        var output = Git("log", "--all", "--remotes", "--source", $"--grep={keyword}", "-i",
+            "--format=%S", "--max-count=500");
+
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var branch = line.Trim()
+                .Replace("refs/remotes/origin/", "")
+                .Replace("refs/heads/", "");
+            if (!string.IsNullOrEmpty(branch) && !branch.Contains("->") && branch != "HEAD")
+                matched.Add(branch);
+        }
+
+        // 3) Match por hash exato (caso o usuario digitou um hash curto/longo)
+        if (keyword.Length >= 4 && keyword.All(c => "0123456789abcdefABCDEF".Contains(c)))
+        {
+            var hashOutput = Git("branch", "-r", "--contains", keyword);
+            foreach (var line in hashOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var branch = line.Trim().Replace("origin/", "");
+                if (!string.IsNullOrEmpty(branch) && !branch.Contains("->") && branch != "HEAD")
+                    matched.Add(branch);
+            }
+        }
+
+        return matched;
+    }
+
+    /// <summary>
+    /// Pesquisa commits em todos os branches cujas mensagens contenham o termo informado.
+    /// Usa --source para evitar N+1 chamadas git.
+    /// </summary>
+    public List<BranchSearchResult> SearchBranchByCommitMessage(string searchTerm)
+    {
+        var output = Git("log", "--all", "--remotes", "--source",
+            $"--grep={searchTerm}", "-i",
+            "--format=%H|%an|%ai|%s|%S", "--max-count=500");
+
+        var results = new List<BranchSearchResult>();
+        var seenHashes = new HashSet<string>();
+
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('|', 5);
+            if (parts.Length < 5) continue;
+
+            var hash = parts[0].Trim();
+            if (!seenHashes.Add(hash)) continue;
+
+            var source = parts[4].Trim()
+                .Replace("refs/remotes/origin/", "")
+                .Replace("refs/heads/", "");
+            if (string.IsNullOrEmpty(source) || source.Contains("->") || source == "HEAD")
+                source = "(não encontrado)";
+
+            var dateRaw = parts[2].Trim();
+            var datePart = dateRaw.Length >= 10 ? dateRaw[..10] : dateRaw;
+
+            results.Add(new BranchSearchResult
+            {
+                Branch = source,
+                Hash = hash.Length >= 8 ? hash[..8] : hash,
+                Author = parts[1].Trim(),
+                Date = datePart,
+                Message = parts[3].Trim()
+            });
+        }
+
+        return results;
+    }
+
+    /// <summary>Versão async da pesquisa de branch por mensagem.</summary>
+    public async Task<List<BranchSearchResult>> SearchBranchByCommitMessageAsync(string searchTerm, CancellationToken ct = default)
+    {
+        return await Task.Run(() => SearchBranchByCommitMessage(searchTerm), ct);
+    }
+
     // ── Branches remotos ───────────────────────────────────────────
 
     public List<RemoteBranch> GetRemoteBranches()

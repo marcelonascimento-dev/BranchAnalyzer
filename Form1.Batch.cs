@@ -190,19 +190,21 @@ public partial class Form1 : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 6,
+            RowCount = 8,
             AutoSize = false,
             Padding = Padding.Empty,
             Margin = Padding.Empty
         };
         tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
         tblFilters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Row 0: Label Nome
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Row 1: TextBox Nome
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Row 2: Label Autor
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Row 3: ComboBox Autor
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));  // Row 4: Tipo + Periodo
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));  // Row 5: Label Buscar commit
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Row 6: TextBox + Btn commit
+        tblFilters.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));  // Row 7: Botoes aplicar/limpar
 
         // Row 0: Label Nome
         var lblFilterName = new Label
@@ -323,7 +325,56 @@ public partial class Form1 : Form
         tblFilters.Controls.Add(tblTipoPeriodo, 0, 4);
         tblFilters.SetColumnSpan(tblTipoPeriodo, 2);
 
-        // Row 5: Botoes aplicar/limpar
+        // Row 5: Busca unificada (nome do branch, commit, hash)
+        var lblCommitSearch = new Label
+        {
+            Text = "Buscar branch/commit:",
+            ForeColor = Color.FromArgb(180, 180, 190),
+            Font = new Font("Segoe UI", 8.5f),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft
+        };
+        tblFilters.Controls.Add(lblCommitSearch, 0, 5);
+        tblFilters.SetColumnSpan(lblCommitSearch, 2);
+
+        var pnlCommitSearch = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 2, 0, 0) };
+        _txtBatchCommitSearch = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(40, 40, 55),
+            ForeColor = Color.White,
+            Font = new Font("Consolas", 9f),
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "Nome do branch, mensagem de commit, hash..."
+        };
+        _txtBatchCommitSearch.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                SearchBranchesByCommit();
+            }
+        };
+        var btnCommitSearch = new Button
+        {
+            Text = "Buscar",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(80, 60, 140),
+            ForeColor = Color.White,
+            Size = new Size(60, 22),
+            Dock = DockStyle.Right,
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 8f, FontStyle.Bold)
+        };
+        btnCommitSearch.FlatAppearance.BorderColor = Color.FromArgb(100, 80, 160);
+        btnCommitSearch.Click += (_, _) => SearchBranchesByCommit();
+        pnlCommitSearch.Controls.Add(_txtBatchCommitSearch);
+        pnlCommitSearch.Controls.Add(btnCommitSearch);
+        tblFilters.Controls.Add(pnlCommitSearch, 0, 6);
+        tblFilters.SetColumnSpan(pnlCommitSearch, 2);
+
+        // Row 7: Botoes aplicar/limpar
         var pnlFilterButtons = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -363,7 +414,7 @@ public partial class Form1 : Form
         btnBatchClearFilters.Click += BtnBatchClearFilters_Click;
         pnlFilterButtons.Controls.Add(btnBatchClearFilters);
 
-        tblFilters.Controls.Add(pnlFilterButtons, 0, 5);
+        tblFilters.Controls.Add(pnlFilterButtons, 0, 7);
         tblFilters.SetColumnSpan(pnlFilterButtons, 2);
 
         var lblFilterResult = new Label
@@ -627,10 +678,63 @@ public partial class Form1 : Form
     private void BtnBatchClearFilters_Click(object? sender, EventArgs e)
     {
         txtBatchFilter.Text = "";
+        _txtBatchCommitSearch.Text = "";
         cmbBatchFilterAuthor.SelectedIndex = 0;
         cmbBatchFilterPrefix.SelectedIndex = 0;
         cmbBatchFilterDays.SelectedIndex = 0;
         ApplyBatchFilters();
+    }
+
+    private void SearchBranchesByCommit()
+    {
+        var keyword = _txtBatchCommitSearch.Text.Trim();
+        if (string.IsNullOrEmpty(keyword) || string.IsNullOrEmpty(_git.RepoPath)) return;
+
+        SetStatus($"Buscando branches por \"{keyword}\"...");
+        SetBusy(true);
+
+        // Collect all branch names from the checklist
+        var allBranches = new List<string>();
+        for (int i = 0; i < clbBatchBranches.Items.Count; i++)
+            allBranches.Add(clbBatchBranches.Items[i].ToString() ?? "");
+
+        Task.Run(() =>
+        {
+            try
+            {
+                var matchedBranches = _git.FindBranches(keyword, allBranches);
+
+                Invoke(() =>
+                {
+                    for (int i = 0; i < clbBatchBranches.Items.Count; i++)
+                    {
+                        var branchName = clbBatchBranches.Items[i].ToString() ?? "";
+                        clbBatchBranches.SetItemChecked(i, matchedBranches.Contains(branchName));
+                    }
+
+                    var checkedCount = clbBatchBranches.CheckedItems.Count;
+                    lblBatchCount.Text = $"{checkedCount} de {clbBatchBranches.Items.Count} selecionados";
+
+                    var lblResult = splitBatch.Panel1.Controls.OfType<Panel>()
+                        .SelectMany(p => p.Controls.OfType<Label>())
+                        .FirstOrDefault(l => l.Name == "lblFilterResult");
+                    if (lblResult != null)
+                    {
+                        lblResult.Text = $"Busca: {matchedBranches.Count} branch(es) encontrado(s)";
+                        lblResult.ForeColor = matchedBranches.Count > 0
+                            ? Color.FromArgb(80, 220, 120)
+                            : Color.FromArgb(255, 100, 80);
+                    }
+
+                    SetStatus($"Busca concluida: {matchedBranches.Count} branch(es) para \"{keyword}\"");
+                    RestoreDefaultCursor();
+                });
+            }
+            catch (Exception ex)
+            {
+                Invoke(() => { SetStatus($"Erro na busca: {ex.Message}"); RestoreDefaultCursor(); });
+            }
+        });
     }
 
     // =====================================================================
@@ -667,7 +771,7 @@ public partial class Form1 : Form
         var ct = _batchCts.Token;
 
         SetStatus($"Analisando {selected.Count} branches em lote (paralelo)...");
-        UseWaitCursor = true; Application.DoEvents();
+        SetBusy(true);
         btnBatchAnalyze.Visible = false;
         btnBatchCancel.Visible = true;
         btnBatchCancel.Enabled = true;
