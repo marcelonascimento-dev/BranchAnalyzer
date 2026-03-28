@@ -72,6 +72,15 @@ public class BranchMetadata
     public string Prefix { get; set; } = "";  // bugfix, improvement, feature, etc.
 }
 
+public class BranchSearchResult
+{
+    public string Branch { get; set; } = "";
+    public string Hash { get; set; } = "";
+    public string Author { get; set; } = "";
+    public string Date { get; set; } = "";
+    public string Message { get; set; } = "";
+}
+
 public class BatchMergeResult
 {
     public string BranchFeature { get; set; } = "";
