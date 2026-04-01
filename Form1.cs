@@ -35,6 +35,7 @@ public partial class Form1 : Form
     // NEW: Commit Search
     private TextBox txtCommitSearch = null!;
     private Label lblCommitSearchCount = null!;
+    private CheckBox chkOnlyReal = null!;
     private List<CommitInfo> _allMergeCommits = new();
 
     // Tab: Meu Branch
