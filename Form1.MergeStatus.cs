@@ -126,13 +126,25 @@ public partial class Form1 : Form
         txtCommitSearch.TextChanged += (_, _) => FilterMergeCommits();
         pnlCommitSearch.Controls.Add(txtCommitSearch);
 
+        chkOnlyReal = new CheckBox
+        {
+            Text = "Apenas pendentes reais",
+            ForeColor = Color.FromArgb(255, 200, 80),
+            Font = new Font("Segoe UI", 8.5f),
+            AutoSize = true,
+            Location = new Point(420, 6),
+            Checked = true
+        };
+        chkOnlyReal.CheckedChanged += (_, _) => FilterMergeCommits();
+        pnlCommitSearch.Controls.Add(chkOnlyReal);
+
         lblCommitSearchCount = new Label
         {
             Text = "",
             ForeColor = Color.FromArgb(120, 180, 255),
             Font = new Font("Segoe UI", 8.5f),
             AutoSize = true,
-            Location = new Point(420, 7)
+            Location = new Point(610, 7)
         };
         pnlCommitSearch.Controls.Add(lblCommitSearchCount);
 
@@ -156,25 +168,44 @@ public partial class Form1 : Form
     private void FilterMergeCommits()
     {
         var filter = txtCommitSearch.Text.Trim();
-        if (string.IsNullOrEmpty(filter))
-        {
-            dgvMergeCommits.DataSource = null;
-            dgvMergeCommits.DataSource = _allMergeCommits;
-            lblCommitSearchCount.Text = _allMergeCommits.Count > 0
-                ? $"{_allMergeCommits.Count} commit(s)"
-                : "";
-            return;
-        }
+        var onlyReal = chkOnlyReal.Checked;
 
-        var filtered = _allMergeCommits.Where(c =>
-            c.Message.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            c.Author.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            c.Hash.Contains(filter, StringComparison.OrdinalIgnoreCase)
-        ).ToList();
+        IEnumerable<CommitInfo> source = _allMergeCommits;
+
+        // Filtrar por tipo
+        if (onlyReal)
+            source = source.Where(c => c.Tipo == "REAL");
+
+        // Filtrar por texto
+        if (!string.IsNullOrEmpty(filter))
+            source = source.Where(c =>
+                c.Message.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                c.Author.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                c.Hash.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+        var filtered = source.ToList();
 
         dgvMergeCommits.DataSource = null;
         dgvMergeCommits.DataSource = filtered;
-        lblCommitSearchCount.Text = $"{filtered.Count} de {_allMergeCommits.Count} commit(s)";
+
+        // Recolorir
+        foreach (DataGridViewRow row in dgvMergeCommits.Rows)
+        {
+            if (row.DataBoundItem is CommitInfo c)
+            {
+                row.DefaultCellStyle.ForeColor = c.Tipo switch
+                {
+                    "PR SEPARADO" => Color.FromArgb(80, 200, 255),
+                    "MERGE" => Color.FromArgb(120, 120, 140),
+                    _ => Color.FromArgb(255, 200, 80)
+                };
+            }
+        }
+
+        if (onlyReal || !string.IsNullOrEmpty(filter))
+            lblCommitSearchCount.Text = $"{filtered.Count} de {_allMergeCommits.Count} commit(s)";
+        else
+            lblCommitSearchCount.Text = _allMergeCommits.Count > 0 ? $"{_allMergeCommits.Count} commit(s)" : "";
     }
 
     private void BtnAnalyze_Click(object? sender, EventArgs e)
@@ -266,25 +297,34 @@ public partial class Form1 : Form
 
         if (commits != null)
         {
-            // Classificar cada commit por tipo
+            // Classificar cada commit por tipo usando cherry info
+            // Commits que aparecem no git cherry = REAL ou PR SEPARADO
+            // Commits que NAO aparecem no git cherry = MERGE (git cherry ignora merge commits)
             var equivHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var allCherryHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             if (cherryInfo != null)
             {
-                foreach (var ci in cherryInfo.Where(c => c.IsEquivalent))
-                    equivHashes.Add(ci.Hash);
+                foreach (var ci in cherryInfo)
+                {
+                    allCherryHashes.Add(ci.Hash);
+                    if (ci.IsEquivalent)
+                        equivHashes.Add(ci.Hash);
+                }
+            }
+
+            bool HashMatches(string commitHash, HashSet<string> hashSet)
+            {
+                var short8 = commitHash.Length >= 8 ? commitHash[..8] : commitHash;
+                return hashSet.Any(h => short8.StartsWith(h, StringComparison.OrdinalIgnoreCase)
+                    || h.StartsWith(short8, StringComparison.OrdinalIgnoreCase));
             }
 
             foreach (var c in commits)
             {
-                var shortHash = c.Hash.Length >= 8 ? c.Hash[..8] : c.Hash;
-                bool isEquiv = equivHashes.Any(h => shortHash.StartsWith(h, StringComparison.OrdinalIgnoreCase)
-                    || h.StartsWith(shortHash, StringComparison.OrdinalIgnoreCase));
-                bool isMerge = c.Message.StartsWith("Merge", StringComparison.OrdinalIgnoreCase)
-                    || c.Message.StartsWith("Merged", StringComparison.OrdinalIgnoreCase);
-
-                if (isEquiv)
+                if (HashMatches(c.Hash, equivHashes))
                     c.Tipo = "PR SEPARADO";
-                else if (isMerge)
+                else if (allCherryHashes.Count > 0 && !HashMatches(c.Hash, allCherryHashes))
                     c.Tipo = "MERGE";
                 else
                     c.Tipo = "REAL";
@@ -292,29 +332,7 @@ public partial class Form1 : Form
 
             _allMergeCommits = commits;
             txtCommitSearch.Text = "";
-            dgvMergeCommits.DataSource = null;
-            dgvMergeCommits.DataSource = commits;
-            lblCommitSearchCount.Text = commits.Count > 0 ? $"{commits.Count} commit(s)" : "";
-
-            // Colorir por tipo
-            foreach (DataGridViewRow row in dgvMergeCommits.Rows)
-            {
-                if (row.DataBoundItem is CommitInfo c)
-                {
-                    switch (c.Tipo)
-                    {
-                        case "PR SEPARADO":
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 200, 255);
-                            break;
-                        case "MERGE":
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(120, 120, 140);
-                            break;
-                        default: // REAL
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(255, 200, 80);
-                            break;
-                    }
-                }
-            }
+            FilterMergeCommits();
         }
     }
 
