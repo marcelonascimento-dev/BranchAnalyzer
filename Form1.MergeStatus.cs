@@ -139,10 +139,11 @@ public partial class Form1 : Form
         // Grid com commits pendentes
         dgvMergeCommits = CreateDataGrid();
         dgvMergeCommits.Columns.AddRange(
+            new DataGridViewTextBoxColumn { Name = "Tipo", HeaderText = "Tipo", Width = 110, DataPropertyName = "Tipo" },
             new DataGridViewTextBoxColumn { Name = "Hash", HeaderText = "Hash", Width = 100, DataPropertyName = "Hash" },
             new DataGridViewTextBoxColumn { Name = "Author", HeaderText = "Autor", Width = 200, DataPropertyName = "Author" },
-            new DataGridViewTextBoxColumn { Name = "RelativeDate", HeaderText = "Quando", Width = 140, DataPropertyName = "RelativeDate" },
-            new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Mensagem", Width = 600, DataPropertyName = "Message" }
+            new DataGridViewTextBoxColumn { Name = "RelativeDate", HeaderText = "Quando", Width = 130, DataPropertyName = "RelativeDate" },
+            new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Mensagem", Width = 500, DataPropertyName = "Message" }
         );
 
         // Ordem: Fill primeiro, depois Top
@@ -265,30 +266,52 @@ public partial class Form1 : Form
 
         if (commits != null)
         {
+            // Classificar cada commit por tipo
+            var equivHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (cherryInfo != null)
+            {
+                foreach (var ci in cherryInfo.Where(c => c.IsEquivalent))
+                    equivHashes.Add(ci.Hash);
+            }
+
+            foreach (var c in commits)
+            {
+                var shortHash = c.Hash.Length >= 8 ? c.Hash[..8] : c.Hash;
+                bool isEquiv = equivHashes.Any(h => shortHash.StartsWith(h, StringComparison.OrdinalIgnoreCase)
+                    || h.StartsWith(shortHash, StringComparison.OrdinalIgnoreCase));
+                bool isMerge = c.Message.StartsWith("Merge", StringComparison.OrdinalIgnoreCase)
+                    || c.Message.StartsWith("Merged", StringComparison.OrdinalIgnoreCase);
+
+                if (isEquiv)
+                    c.Tipo = "PR SEPARADO";
+                else if (isMerge)
+                    c.Tipo = "MERGE";
+                else
+                    c.Tipo = "REAL";
+            }
+
             _allMergeCommits = commits;
             txtCommitSearch.Text = "";
             dgvMergeCommits.DataSource = null;
             dgvMergeCommits.DataSource = commits;
             lblCommitSearchCount.Text = commits.Count > 0 ? $"{commits.Count} commit(s)" : "";
 
-            // Colorir commits ja aplicados via PR separado
-            if (cherryInfo != null && cherryInfo.Count > 0)
+            // Colorir por tipo
+            foreach (DataGridViewRow row in dgvMergeCommits.Rows)
             {
-                var equivHashes = new HashSet<string>(
-                    cherryInfo.Where(c => c.IsEquivalent).Select(c => c.Hash),
-                    StringComparer.OrdinalIgnoreCase);
-
-                foreach (DataGridViewRow row in dgvMergeCommits.Rows)
+                if (row.DataBoundItem is CommitInfo c)
                 {
-                    if (row.DataBoundItem is CommitInfo c)
+                    switch (c.Tipo)
                     {
-                        var shortHash = c.Hash.Length >= 8 ? c.Hash[..8] : c.Hash;
-                        if (equivHashes.Any(h => shortHash.StartsWith(h, StringComparison.OrdinalIgnoreCase)
-                            || h.StartsWith(shortHash, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            row.DefaultCellStyle.ForeColor = Color.FromArgb(100, 100, 120);
-                            row.DefaultCellStyle.Font = new Font("Consolas", 9.5f, FontStyle.Strikeout);
-                        }
+                        case "PR SEPARADO":
+                            row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 200, 255);
+                            break;
+                        case "MERGE":
+                            row.DefaultCellStyle.ForeColor = Color.FromArgb(120, 120, 140);
+                            break;
+                        default: // REAL
+                            row.DefaultCellStyle.ForeColor = Color.FromArgb(255, 200, 80);
+                            break;
                     }
                 }
             }
