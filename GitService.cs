@@ -711,6 +711,171 @@ public class GitService
         return (stdout.Trim(), stderr.Trim(), proc.ExitCode);
     }
 
+    // ── Cherry-pick detection (PR separado) ──────────────────────────
+
+    /// <summary>
+    /// Usa git cherry para detectar commits que ja foram aplicados via PR separado.
+    /// Retorna (equivalentes, reaisPendentes) contando commits com patch-id duplicado.
+    /// </summary>
+    public (int equivalents, int realPending) GetCherryStatus(string upstream, string head)
+    {
+        var output = Git("cherry", upstream, head);
+        if (string.IsNullOrEmpty(output)) return (0, 0);
+
+        int equiv = 0, pending = 0;
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("-")) equiv++;
+            else if (trimmed.StartsWith("+")) pending++;
+        }
+        return (equiv, pending);
+    }
+
+    /// <summary>
+    /// Retorna lista detalhada de commits com info de cherry-pick equivalente.
+    /// </summary>
+    public List<CherryCommitInfo> GetCherryCommits(string upstream, string head)
+    {
+        var output = Git("cherry", "-v", upstream, head);
+        var result = new List<CherryCommitInfo>();
+        if (string.IsNullOrEmpty(output)) return result;
+
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length < 3) continue;
+
+            var sign = trimmed[0];
+            var rest = trimmed[2..].Trim();
+            var spaceIdx = rest.IndexOf(' ');
+            var hash = spaceIdx > 0 ? rest[..spaceIdx] : rest;
+            var message = spaceIdx > 0 ? rest[(spaceIdx + 1)..] : "";
+
+            // Buscar autor e data
+            var logInfo = Git("log", "-1", "--format=%an|%ai", hash);
+            var parts = logInfo.Split('|', 2);
+
+            result.Add(new CherryCommitInfo
+            {
+                Hash = hash.Length >= 8 ? hash[..8] : hash,
+                IsEquivalent = sign == '-',
+                Author = parts.Length > 0 ? parts[0].Trim() : "",
+                Date = parts.Length > 1 && parts[1].Trim().Length >= 10 ? parts[1].Trim()[..10] : "",
+                Message = message
+            });
+        }
+        return result;
+    }
+
+    // ── SQL Scripts Analysis ─────────────────────────────────────────
+
+    /// <summary>
+    /// Retorna arquivos .sql adicionados ou modificados entre dois branches.
+    /// Compara branchB contra baseBranch (ex: feature vs develop).
+    /// </summary>
+    public List<SqlScriptInfo> GetSqlFilesChanged(string baseBranch, string featureBranch)
+    {
+        // Arquivos alterados entre base e feature
+        var diff = Git("diff", "--name-status", $"{baseBranch}...{featureBranch}");
+        var result = new List<SqlScriptInfo>();
+
+        foreach (var line in diff.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('\t', 2);
+            if (parts.Length < 2) continue;
+            var filePath = parts[1].Trim();
+            if (!filePath.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var statusCode = parts[0].Trim();
+            var status = statusCode switch
+            {
+                "A" => "Adicionado",
+                "M" => "Modificado",
+                _ => statusCode.StartsWith("R") ? "Renomeado" : statusCode
+            };
+            // Ignorar removidos
+            if (statusCode == "D") continue;
+
+            // Pegar info do commit que adicionou/modificou este arquivo
+            var logInfo = Git("log", "-1", "--format=%an|%ai|%s", $"{baseBranch}..{featureBranch}", "--", filePath);
+            var logParts = logInfo.Split('|', 3);
+
+            result.Add(new SqlScriptInfo
+            {
+                FilePath = filePath,
+                FileName = Path.GetFileName(filePath),
+                Branch = featureBranch.Replace("origin/", ""),
+                Author = logParts.Length > 0 ? logParts[0].Trim() : "",
+                Date = logParts.Length > 1 && logParts[1].Trim().Length >= 10 ? logParts[1].Trim()[..10] : "",
+                CommitMessage = logParts.Length > 2 ? logParts[2].Trim() : "",
+                Status = status
+            });
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Retorna o conteudo de um arquivo em um branch especifico (git show).
+    /// </summary>
+    public string GetFileContent(string branch, string filePath)
+    {
+        // Tentar UTF-8 primeiro, se tiver caracteres invalidos tentar Latin1
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = RepoPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add("show");
+        psi.ArgumentList.Add($"{branch}:{filePath}");
+
+        using var proc = Process.Start(psi)!;
+        using var ms = new MemoryStream();
+        proc.StandardOutput.BaseStream.CopyTo(ms);
+        var rawBytes = ms.ToArray();
+        proc.StandardError.ReadToEnd();
+        proc.WaitForExit(60_000);
+
+        // Detectar encoding: se tem bytes invalidos em UTF-8, usar Latin1 (Windows-1252)
+        var utf8 = Encoding.UTF8.GetString(rawBytes);
+        if (utf8.Contains('\uFFFD'))
+        {
+            // Fallback para Windows-1252 (Latin1 estendido)
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(1252).GetString(rawBytes);
+        }
+        return utf8;
+    }
+
+    /// <summary>
+    /// Verifica se um arquivo existe em um branch especifico.
+    /// </summary>
+    public bool FileExistsInBranch(string branch, string filePath)
+    {
+        var (_, _, code) = RunGit("cat-file", "-t", $"{branch}:{filePath}");
+        return code == 0;
+    }
+
+    /// <summary>
+    /// Retorna a lista de todos os arquivos .sql presentes em um branch.
+    /// </summary>
+    public List<string> GetAllSqlFiles(string branch)
+    {
+        var output = Git("ls-tree", "-r", "--name-only", branch);
+        var result = new List<string>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var file = line.Trim();
+            if (file.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+                result.Add(file);
+        }
+        return result;
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  ASYNC METHODS
     // ══════════════════════════════════════════════════════════════════

@@ -353,6 +353,7 @@ public partial class Form1 : Form
         SetupMyBranchTab();
         SetupBranchHealthTab();
         SetupSearchBranchTab();
+        SetupSqlScriptsTab();
 
         // Mover aba Pesquisar Branch para terceira posicao (indice 2)
         tabs.TabPages.Remove(tabSearchBranch);

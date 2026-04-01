@@ -6,6 +6,17 @@ public class MergeStatus
     public int PendingCommits { get; set; }
     public int AheadCommits { get; set; }
     public string MergeBase { get; set; } = "";
+    public int CherryEquivalents { get; set; }   // Commits ja aplicados via PR separado (mesmo patch)
+    public int RealPending { get; set; }          // Commits realmente pendentes (PendingCommits - CherryEquivalents)
+}
+
+public class CherryCommitInfo
+{
+    public string Hash { get; set; } = "";
+    public bool IsEquivalent { get; set; }  // true = ja aplicado via outro PR
+    public string Author { get; set; } = "";
+    public string Date { get; set; } = "";
+    public string Message { get; set; } = "";
 }
 
 public class CommitInfo
@@ -86,9 +97,34 @@ public class BatchMergeResult
     public string BranchFeature { get; set; } = "";
     public string Status { get; set; } = "";
     public int CommitsPendentes { get; set; }
+    public int JaAplicados { get; set; }         // Cherry equivalents (PR separado)
+    public int ReaisPendentes { get; set; }       // Realmente pendentes
     public int ConflitosArquivos { get; set; }
     public int ArquivosAlterados { get; set; }
     public string UltimoAutor { get; set; } = "";
     public string UltimoCommit { get; set; } = "";
     public bool IsMerged { get; set; }
+}
+
+public class SqlScriptInfo
+{
+    public string FilePath { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string Branch { get; set; } = "";
+    public string Author { get; set; } = "";
+    public string Date { get; set; } = "";
+    public string CommitMessage { get; set; } = "";
+    public string Status { get; set; } = "";  // Adicionado, Modificado
+}
+
+public class BranchSqlResult
+{
+    public string Branch { get; set; } = "";
+    public string Autor { get; set; } = "";
+    public string UltimaData { get; set; } = "";
+    public int ScriptsAdicionados { get; set; }
+    public int ScriptsModificados { get; set; }
+    public int TotalScripts { get; set; }
+    public string Status { get; set; } = "";  // NA DEVELOP, FALTANDO, PARCIAL
+    public List<SqlScriptInfo> Scripts { get; set; } = new();
 }
