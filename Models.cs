@@ -26,6 +26,7 @@ public class CommitInfo
     public string RelativeDate { get; set; } = "";
     public DateTime Date { get; set; }
     public string Message { get; set; } = "";
+    public string Tipo { get; set; } = "";  // REAL, PR SEPARADO, MERGE
 }
 
 public class FileChange
