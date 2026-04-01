@@ -297,25 +297,34 @@ public partial class Form1 : Form
 
         if (commits != null)
         {
-            // Classificar cada commit por tipo
+            // Classificar cada commit por tipo usando cherry info
+            // Commits que aparecem no git cherry = REAL ou PR SEPARADO
+            // Commits que NAO aparecem no git cherry = MERGE (git cherry ignora merge commits)
             var equivHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var allCherryHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             if (cherryInfo != null)
             {
-                foreach (var ci in cherryInfo.Where(c => c.IsEquivalent))
-                    equivHashes.Add(ci.Hash);
+                foreach (var ci in cherryInfo)
+                {
+                    allCherryHashes.Add(ci.Hash);
+                    if (ci.IsEquivalent)
+                        equivHashes.Add(ci.Hash);
+                }
+            }
+
+            bool HashMatches(string commitHash, HashSet<string> hashSet)
+            {
+                var short8 = commitHash.Length >= 8 ? commitHash[..8] : commitHash;
+                return hashSet.Any(h => short8.StartsWith(h, StringComparison.OrdinalIgnoreCase)
+                    || h.StartsWith(short8, StringComparison.OrdinalIgnoreCase));
             }
 
             foreach (var c in commits)
             {
-                var shortHash = c.Hash.Length >= 8 ? c.Hash[..8] : c.Hash;
-                bool isEquiv = equivHashes.Any(h => shortHash.StartsWith(h, StringComparison.OrdinalIgnoreCase)
-                    || h.StartsWith(shortHash, StringComparison.OrdinalIgnoreCase));
-                bool isMerge = c.Message.StartsWith("Merge", StringComparison.OrdinalIgnoreCase)
-                    || c.Message.StartsWith("Merged", StringComparison.OrdinalIgnoreCase);
-
-                if (isEquiv)
+                if (HashMatches(c.Hash, equivHashes))
                     c.Tipo = "PR SEPARADO";
-                else if (isMerge)
+                else if (allCherryHashes.Count > 0 && !HashMatches(c.Hash, allCherryHashes))
                     c.Tipo = "MERGE";
                 else
                     c.Tipo = "REAL";
