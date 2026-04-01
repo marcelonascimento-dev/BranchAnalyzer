@@ -239,9 +239,17 @@ public partial class Form1 : Form
         }
 
         // Pendentes com info de cherry
+        var mergeCommits = status.PendingCommits - status.RealPending - status.CherryEquivalents;
+        if (mergeCommits < 0) mergeCommits = 0;
+
         if (status.CherryEquivalents > 0)
         {
-            lblMergePending.Text = $"Commits pendentes: {status.PendingCommits}  ({status.RealPending} reais + {status.CherryEquivalents} ja aplicados via PR separado)";
+            var parts = new List<string>();
+            parts.Add($"{status.RealPending} reais");
+            parts.Add($"{status.CherryEquivalents} ja aplicados via PR separado");
+            if (mergeCommits > 0)
+                parts.Add($"{mergeCommits} merge commits");
+            lblMergePending.Text = $"Commits pendentes: {status.PendingCommits}  ({string.Join(" + ", parts)})";
             lblMergePending.ForeColor = status.RealPending > 0 ? Color.FromArgb(255, 180, 60) : Color.FromArgb(80, 200, 255);
         }
         else
