@@ -521,13 +521,15 @@ public partial class Form1 : Form
         // Grid de resultados (direita)
         dgvBatchResults = CreateDataGrid();
         dgvBatchResults.Columns.AddRange(
-            new DataGridViewTextBoxColumn { Name = "BranchFeature", HeaderText = "Branch Feature (B)", Width = 280, DataPropertyName = "BranchFeature" },
+            new DataGridViewTextBoxColumn { Name = "BranchFeature", HeaderText = "Branch Feature (B)", Width = 250, DataPropertyName = "BranchFeature" },
             new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 130, DataPropertyName = "Status" },
-            new DataGridViewTextBoxColumn { Name = "CommitsPendentes", HeaderText = "Commits Pend.", Width = 110, DataPropertyName = "CommitsPendentes" },
-            new DataGridViewTextBoxColumn { Name = "ConflitosArquivos", HeaderText = "Conflitos Pot.", Width = 110, DataPropertyName = "ConflitosArquivos" },
-            new DataGridViewTextBoxColumn { Name = "ArquivosAlterados", HeaderText = "Arq. Alterados", Width = 110, DataPropertyName = "ArquivosAlterados" },
-            new DataGridViewTextBoxColumn { Name = "UltimoAutor", HeaderText = "Ultimo Autor", Width = 160, DataPropertyName = "UltimoAutor" },
-            new DataGridViewTextBoxColumn { Name = "UltimoCommit", HeaderText = "Ultimo Commit", Width = 250, DataPropertyName = "UltimoCommit" }
+            new DataGridViewTextBoxColumn { Name = "CommitsPendentes", HeaderText = "Commits", Width = 70, DataPropertyName = "CommitsPendentes" },
+            new DataGridViewTextBoxColumn { Name = "JaAplicados", HeaderText = "Ja Aplicados", Width = 90, DataPropertyName = "JaAplicados" },
+            new DataGridViewTextBoxColumn { Name = "ReaisPendentes", HeaderText = "Reais Pend.", Width = 90, DataPropertyName = "ReaisPendentes" },
+            new DataGridViewTextBoxColumn { Name = "ConflitosArquivos", HeaderText = "Conflitos", Width = 80, DataPropertyName = "ConflitosArquivos" },
+            new DataGridViewTextBoxColumn { Name = "ArquivosAlterados", HeaderText = "Arq. Alter.", Width = 80, DataPropertyName = "ArquivosAlterados" },
+            new DataGridViewTextBoxColumn { Name = "UltimoAutor", HeaderText = "Ultimo Autor", Width = 150, DataPropertyName = "UltimoAutor" },
+            new DataGridViewTextBoxColumn { Name = "UltimoCommit", HeaderText = "Ultimo Commit", Width = 220, DataPropertyName = "UltimoCommit" }
         );
         dgvBatchResults.CellDoubleClick += DgvBatchResults_CellDoubleClick;
 
@@ -815,11 +817,30 @@ public partial class Form1 : Form
                             var files = _git.GetChangedFiles(receptor, resolved);
                             var branchInfo = _git.GetBranchInfo(receptor, resolved);
 
+                            // Detectar cherry-pick equivalents
+                            int cherryEquiv = 0, realPending = 0;
+                            if (mergeStatus.PendingCommits > 0)
+                            {
+                                (cherryEquiv, realPending) = _git.GetCherryStatus(receptor, resolved);
+                            }
+
+                            string batchStatus;
+                            if (mergeStatus.IsMerged)
+                                batchStatus = "MERGED";
+                            else if (cherryEquiv > 0 && realPending == 0)
+                                batchStatus = "EQUIVALENTE";
+                            else if (cherryEquiv > 0)
+                                batchStatus = "PARCIAL";
+                            else
+                                batchStatus = "PENDENTE";
+
                             results[index] = new BatchMergeResult
                             {
                                 BranchFeature = branchName,
-                                Status = mergeStatus.IsMerged ? "MERGED" : "PENDENTE",
+                                Status = batchStatus,
                                 CommitsPendentes = mergeStatus.PendingCommits,
+                                JaAplicados = cherryEquiv,
+                                ReaisPendentes = realPending,
                                 ConflitosArquivos = conflicts.Count,
                                 ArquivosAlterados = files.Count,
                                 UltimoAutor = branchInfo.LastCommitAuthor,
@@ -895,6 +916,10 @@ public partial class Form1 : Form
             {
                 if (r.Status == "MERGED")
                     row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 220, 80);
+                else if (r.Status == "EQUIVALENTE")
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(80, 200, 255);
+                else if (r.Status == "PARCIAL")
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(200, 180, 255);
                 else if (r.Status == "PENDENTE")
                     row.DefaultCellStyle.ForeColor = r.ConflitosArquivos > 0
                         ? Color.FromArgb(255, 100, 80)
@@ -909,11 +934,14 @@ public partial class Form1 : Form
         UpdateBatchDashboard(resultList);
 
         var merged = resultList.Count(r => r.IsMerged);
+        var equivalent = resultList.Count(r => r.Status == "EQUIVALENTE");
+        var partial = resultList.Count(r => r.Status == "PARCIAL");
         var pending = resultList.Count(r => r.Status == "PENDENTE");
         var withConflicts = resultList.Count(r => r.ConflitosArquivos > 0);
         var cancelled = resultList.Count(r => r.Status == "CANCELADO");
 
-        var statusMsg = $"Lote concluido em {sw.Elapsed.TotalSeconds:F1}s: {resultList.Count} branches | {merged} merged | {pending} pendentes | {withConflicts} com conflitos";
+        var statusMsg = $"Lote concluido em {sw.Elapsed.TotalSeconds:F1}s: {resultList.Count} branches | {merged} merged | {equivalent} equivalentes | {pending} pendentes | {withConflicts} com conflitos";
+        if (partial > 0) statusMsg += $" | {partial} parciais";
         if (cancelled > 0) statusMsg += $" | {cancelled} cancelados";
         SetStatus(statusMsg);
 
@@ -937,13 +965,15 @@ public partial class Form1 : Form
 
         var total = results.Count;
         var merged = results.Count(r => r.IsMerged);
-        var pending = results.Count(r => r.Status == "PENDENTE");
+        var equiv = results.Count(r => r.Status == "EQUIVALENTE");
+        var pending = results.Count(r => r.Status == "PENDENTE" || r.Status == "PARCIAL");
         var conflicts = results.Count(r => r.ConflitosArquivos > 0);
 
         var cards = new[]
         {
             ("Total", total.ToString(), Color.FromArgb(120, 180, 255)),
             ("Merged", merged.ToString(), Color.FromArgb(80, 220, 80)),
+            ("Equivalentes", equiv.ToString(), Color.FromArgb(80, 200, 255)),
             ("Pendentes", pending.ToString(), Color.FromArgb(255, 200, 80)),
             ("Com Conflitos", conflicts.ToString(), Color.FromArgb(255, 100, 80))
         };

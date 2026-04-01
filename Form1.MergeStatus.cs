@@ -190,7 +190,23 @@ public partial class Form1 : Form
             {
                 var status = _git.CheckMergeStatus(a, b);
                 var commits = _git.GetPendingCommits(a, b);
-                Invoke(() => UpdateMergeStatus(status, a, b, commits));
+
+                // Detectar cherry-pick equivalents (PRs separados)
+                if (status.PendingCommits > 0)
+                {
+                    var (equiv, realPending) = _git.GetCherryStatus(a, b);
+                    status.CherryEquivalents = equiv;
+                    status.RealPending = realPending;
+                }
+
+                // Buscar info de cherry para marcar na grid
+                List<CherryCommitInfo>? cherryInfo = null;
+                if (status.CherryEquivalents > 0)
+                {
+                    cherryInfo = _git.GetCherryCommits(a, b);
+                }
+
+                Invoke(() => UpdateMergeStatus(status, a, b, commits, cherryInfo));
 
                 Invoke(() => { SetStatus($"Analise concluida. Branch A: {a} | Branch B: {b}"); RestoreDefaultCursor(); });
             }
@@ -201,18 +217,38 @@ public partial class Form1 : Form
         });
     }
 
-    private void UpdateMergeStatus(MergeStatus status, string branchA, string branchB, List<CommitInfo>? commits = null)
+    private void UpdateMergeStatus(MergeStatus status, string branchA, string branchB, List<CommitInfo>? commits = null, List<CherryCommitInfo>? cherryInfo = null)
     {
         pnlMergeIcon.Tag = status.IsMerged;
         pnlMergeIcon.Invalidate();
 
-        lblMergeResult.Text = status.IsMerged
-            ? $"MERGE JA REALIZADO - Todos os commits de [{branchB}] estao em [{branchA}]"
-            : $"MERGE PENDENTE - Existem commits em [{branchB}] que nao estao em [{branchA}]";
-        lblMergeResult.ForeColor = status.IsMerged ? Color.FromArgb(80, 220, 80) : Color.FromArgb(255, 180, 60);
+        if (status.IsMerged)
+        {
+            lblMergeResult.Text = $"MERGE JA REALIZADO - Todos os commits de [{branchB}] estao em [{branchA}]";
+            lblMergeResult.ForeColor = Color.FromArgb(80, 220, 80);
+        }
+        else if (status.CherryEquivalents > 0 && status.RealPending == 0)
+        {
+            lblMergeResult.Text = $"EQUIVALENTE - Commits de [{branchB}] ja aplicados em [{branchA}] via PR separado";
+            lblMergeResult.ForeColor = Color.FromArgb(80, 200, 255);
+        }
+        else
+        {
+            lblMergeResult.Text = $"MERGE PENDENTE - Existem commits em [{branchB}] que nao estao em [{branchA}]";
+            lblMergeResult.ForeColor = Color.FromArgb(255, 180, 60);
+        }
 
-        lblMergePending.Text = $"Commits pendentes: {status.PendingCommits}";
-        lblMergePending.ForeColor = status.PendingCommits > 0 ? Color.FromArgb(255, 180, 60) : Color.FromArgb(80, 220, 80);
+        // Pendentes com info de cherry
+        if (status.CherryEquivalents > 0)
+        {
+            lblMergePending.Text = $"Commits pendentes: {status.PendingCommits}  ({status.RealPending} reais + {status.CherryEquivalents} ja aplicados via PR separado)";
+            lblMergePending.ForeColor = status.RealPending > 0 ? Color.FromArgb(255, 180, 60) : Color.FromArgb(80, 200, 255);
+        }
+        else
+        {
+            lblMergePending.Text = $"Commits pendentes: {status.PendingCommits}";
+            lblMergePending.ForeColor = status.PendingCommits > 0 ? Color.FromArgb(255, 180, 60) : Color.FromArgb(80, 220, 80);
+        }
 
         lblMergeAhead.Text = $"{branchA} esta a frente de {branchB} em: {status.AheadCommits} commit(s)";
 
@@ -226,6 +262,28 @@ public partial class Form1 : Form
             dgvMergeCommits.DataSource = null;
             dgvMergeCommits.DataSource = commits;
             lblCommitSearchCount.Text = commits.Count > 0 ? $"{commits.Count} commit(s)" : "";
+
+            // Colorir commits ja aplicados via PR separado
+            if (cherryInfo != null && cherryInfo.Count > 0)
+            {
+                var equivHashes = new HashSet<string>(
+                    cherryInfo.Where(c => c.IsEquivalent).Select(c => c.Hash),
+                    StringComparer.OrdinalIgnoreCase);
+
+                foreach (DataGridViewRow row in dgvMergeCommits.Rows)
+                {
+                    if (row.DataBoundItem is CommitInfo c)
+                    {
+                        var shortHash = c.Hash.Length >= 8 ? c.Hash[..8] : c.Hash;
+                        if (equivHashes.Any(h => shortHash.StartsWith(h, StringComparison.OrdinalIgnoreCase)
+                            || h.StartsWith(shortHash, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            row.DefaultCellStyle.ForeColor = Color.FromArgb(100, 100, 120);
+                            row.DefaultCellStyle.Font = new Font("Consolas", 9.5f, FontStyle.Strikeout);
+                        }
+                    }
+                }
+            }
         }
     }
 
